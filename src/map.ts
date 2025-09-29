@@ -6,25 +6,17 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/09/29 22:56:13 by yohan            ###   ########.fr       */
+/*   Updated: 2025/09/29 22:57:02 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 import { createHeatPoints } from "./random_gen.js";
 
-// function getColor(value: number): [number, number, number] {
-//     const r = Math.floor(255 * value);               // red increases with heat
-//     const g = Math.floor(255 * (1 - Math.abs(0.5 - value) * 2)); // green peaks in middle
-//     const b = Math.floor(255 * (1 - value));         // blue decreases with heat
-//     return [r, g, b];
-// }    
-
 function getColor(value: number): [number, number, number] {
-    // Cold color: light blue (whitish) instead of pure blue
+
     const cold = [180, 200, 255];  // R,G,B for light blue
     const hot = [255, 0, 0];       // R,G,B for red
 
-    // Interpolate between cold and hot based on value (0–1)
     const r = Math.floor(cold[0] + (hot[0] - cold[0]) * value);
     const g = Math.floor(cold[1] + (hot[1] - cold[1]) * value);
     const b = Math.floor(cold[2] + (hot[2] - cold[2]) * value);
