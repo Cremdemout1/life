@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   cell.ts                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
+/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/30 21:58:10 by yohan             #+#    #+#             */
-/*   Updated: 2025/10/01 19:04:13 by yohan            ###   ########.fr       */
+/*   Updated: 2025/10/01 23:53:20 by ycantin          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -36,7 +36,7 @@ class Cell {
         this.map = map;
     }
 
-    getNeighbourhood(): Array<[number, number, number]> {
+    private getNeighbourhood(): Array<[number, number, number]> {
         const neighbourhood: Array<[number, number, number]> = [];
         let cx = this.position[0];
         let cy = this.position[1];
@@ -53,13 +53,13 @@ class Cell {
         return neighbourhood;
     };
 
-    leavePheremone(){}; //should leave trail of -1 if dangerous or 1 if good for survival and 0 for asking help (wants feed from other)
+    public leavePheremone(){}; //should leave trail of -1 if dangerous or 1 if good for survival and 0 for asking help (wants feed from other)
 
-    divide(){}; //creates similar cell with slight weight adjustment(adds variety to evolution)
+    private divide(){}; //creates similar cell with slight weight adjustment(adds variety to evolution)
 
-    move(){};// moves cost energy (0.01?)
+    private move(){};// moves cost energy (0.01?)
 
-    eat(){}// eats when in feeder area
+    private eat(){}// eats when in feeder area
 
     // collectFeed(){}; //collect extra feed
 
@@ -67,10 +67,14 @@ class Cell {
 
     // receiveFeed(){}; //receive feed from nearby cell
 
-    contract(){}; // heat affects less, moves faster
+    private contract(){}; // heat affects less, moves faster
 
-    expand(){}; //heat affects more but can eat faster and/or could eat smaller cells?, moves slower
+    private expand(){}; //heat affects more but can eat faster and/or could eat smaller cells?, moves slower
 }
+
+//////////////////////////////////////////////////////////////////////////////////////
+//                                                                                  //
+//////////////////////////////////////////////////////////////////////////////////////
 
 class UnsupervisedNN {
     
@@ -108,10 +112,10 @@ class UnsupervisedNN {
         this.b2 = createBias(this.latent_layer_size);
         this.b3 = createBias(this.hidden_layer_size);
         this.b4 = createBias(this.input_size);
-        this.policyNetwork = new NN;
+        this.policyNetwork = new NN();
     }
 
-    modelInput(): number[] {
+    private modelInput(): number[] {
         const input: Array<any> = [];
         let heat: Array<number> = [], feed: Array<number> = [], pheremone: Array<number> = [];
         for (let i = 0; i < this.cell.neighbourhood.length; i++) {
@@ -126,11 +130,11 @@ class UnsupervisedNN {
         return input;
     }
 
-    ReLU(value: number) { //activation function
+    private ReLU(value: number) { //activation function
         return (Math.max(0, value));
     }
 
-    forwardPass(input: number[], weights: number[][], bias: number[]): number[] {
+    private forwardPass(input: number[], weights: number[][], bias: number[]): number[] {
         const newLayer: number[] = [];
         
         for (let row = 0; row < weights.length; row++) {
@@ -144,7 +148,7 @@ class UnsupervisedNN {
         return activatedLayer;
     }
 
-    MSE(input: number[], output: number[]): number { //mean squared error
+    private MSE(input: number[], output: number[]): number { //mean squared error
         let loss = 0;
         for (let i = 0; i < this.input.length; i++) {
             let diff = input[i] - output[i];
@@ -153,7 +157,7 @@ class UnsupervisedNN {
         return loss / input.length;
     }
 
-    MSEgradient(input: number[], output: number[]): number[] {
+    private MSEgradient(input: number[], output: number[]): number[] {
         const grad: number[] = [];
         const len = input.length;
         for (let i = 0; i < len; i++)
@@ -161,7 +165,7 @@ class UnsupervisedNN {
         return grad;
     }
 
-    backwardPass(previousLayer: number[], //back propagation
+    private backwardPass(previousLayer: number[], //back propagation
                  currentActivatedLayer: number[], 
                  gradOutputs: number[], 
                  weights: number[][], 
@@ -182,7 +186,7 @@ class UnsupervisedNN {
         return gradientInput;
     }
 
-    AutoEncoder(): number[] {
+    private AutoEncoder(): number[] {
         //encode
         const hiddenLayer = this.forwardPass(this.input, this.W1, this.b1);
         const latentLayer = this.forwardPass(hiddenLayer, this.W2, this.b2);
@@ -201,8 +205,68 @@ class UnsupervisedNN {
         this.backwardPass(this.input, hiddenLayer, GradientHiddenLayer, this.W1, this.b1);
         return latentLayer;
     }
+
+    public think() { //predict
+        const instincts = this.AutoEncoder();
+        this.policyNetwork.predict(instincts);
+    }
 }
 
+//////////////////////////////////////////////////////////////////////////////////////
+//                                                                                  //
+//////////////////////////////////////////////////////////////////////////////////////
+
 class  NN{
+    learning_rate: number;
+    epoch: number;
+
+    input_size: number = 8;
+    hidden_layer_size: number = 16;
+    output_size: number = 12;
     
+    W1: number[][];
+    W2: number[][];
+
+    b1: number[];
+    b2: number[];
+
+    constructor(learning_rate: number = 0.01, iterations: number = 50) {
+        this.learning_rate = learning_rate;
+        this.epoch = iterations;
+
+        this.W1 = [];
+        this.W2 = [];
+        this.W1 = createWeightMatrix(this.hidden_layer_size, this.input_size);
+        this.W2 = createWeightMatrix(this.output_size, this.hidden_layer_size);
+        this.b1 = createBias(this.hidden_layer_size);
+        this.b2 = createBias(this.output_size);
+    }
+
+    private sigmoid(x: number): number {
+        return 1 / (1 + Math.exp(-x));
+    }
+
+    private vectMatrixMult(vector: number[], matrix: number[][]): number[] {
+        const result: number[] = [];
+        for (let row = 0; row < matrix.length; row++) {
+            let sum = 0;
+            for (let col = 0; col < matrix[0].length; col++) {
+                sum += matrix[row][col] * vector[col];;
+            }
+            result.push(sum);
+        }
+        return result;
+    }
+    
+    public predict(input: number[]) {
+        const static_hidden_layer: number[] = this.vectMatrixMult(input, this.W1);
+        const activated_hidden_layer = static_hidden_layer.map((x, i) => this.sigmoid(x + this.b1[i]));
+        
+        const static_output:number[] = this.vectMatrixMult(activated_hidden_layer, this.W2);
+        const plausibilities: number[] = static_output.map((x, i) => this.sigmoid(x + this.b2[i]));
+
+        //continue with reinforcement learning. not supervised learning
+        //make function that receives a reward (loss) and back propagates from this.
+        // the function will be called from Cell class after doing an action
+    }
 }

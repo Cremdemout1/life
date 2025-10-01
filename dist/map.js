@@ -1,15 +1,15 @@
 /* ************************************************************************** */
 /*                                                                            */
 /*                                                        :::      ::::::::   */
-/*   map.ts                                             :+:      :+:    :+:   */
+/*   map.js                                             :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
+/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/09/30 15:35:40 by yohan            ###   ########.fr       */
+/*   Updated: 2025/10/01 23:36:28 by ycantin          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
-import { createFeeders, createHeatPoints } from "./random_gen.js";
+
 function getColor(value) {
     const cold = [180, 200, 255]; // R,G,B for light blue
     const hot = [255, 0, 0]; // R,G,B for red
@@ -52,8 +52,8 @@ class mapClass {
             const maxX = Math.min(this.width - 1, Math.ceil(cx + r));
             const minY = Math.max(0, Math.floor(cy - r));
             const maxY = Math.min(this.height - 1, Math.ceil(cy + r));
-            for (let y = minY; y < maxY; y++) {
-                for (let x = minX; x < maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+                for (let x = minX; x <= maxX; x++) {
                     const distanceToX = x - cx;
                     const distanceToY = y - cy;
                     this.grid[y][x][0] += A * Math.exp(-((distanceToX * distanceToX) + (distanceToY * distanceToY)) / (2 * sigma * sigma));
@@ -69,8 +69,8 @@ class mapClass {
             const maxX = Math.min(this.width - 1, Math.ceil(cx + r));
             const minY = Math.max(0, Math.floor(cy - r));
             const maxY = Math.min(this.height - 1, Math.ceil(cy + r));
-            for (let y = minY; y < maxY; y++)
-                for (let x = minX; x < maxX; x++) {
+            for (let y = minY; y <= maxY; y++)
+                for (let x = minX; x <= maxX; x++) {
                     const dx = x - cx;
                     const dy = y - cy;
                     if (dx * dx + dy * dy <= r * r) { // inside circle
@@ -89,8 +89,8 @@ class mapClass {
         // Normalize values to 0–1
         const normalizedGrid = this.grid.map(row => row.map(([heat, feeder, pheremone]) => [heat / maxHeat, feeder, 0]));
         const imageData = this.context.createImageData(this.width, this.height);
-        for (let y = 0; y < this.height; y++) {
-            for (let x = 0; x < this.width; x++) {
+        for (let y = 0; y <= this.height; y++) {
+            for (let x = 0; x <= this.width; x++) {
                 const idx = (y * this.width + x) * 4;
                 if (this.grid[y][x][1] != 0) {
                     imageData.data[idx] = 204;

@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   map.ts                                             :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
+/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/10/01 14:13:09 by yohan            ###   ########.fr       */
+/*   Updated: 2025/10/01 23:35:06 by ycantin          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -71,8 +71,8 @@ export class mapClass {
             const minY = Math.max(0, Math.floor(cy - r));
             const maxY = Math.min(this.height - 1, Math.ceil(cy + r));
 
-            for (let y = minY; y < maxY; y++) {
-                for (let x = minX; x < maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+                for (let x = minX; x <= maxX; x++) {
                     const distanceToX = x - cx;
                     const distanceToY = y - cy;
                     this.grid[y][x][0] += A * Math.exp(-((distanceToX * distanceToX) + (distanceToY * distanceToY))/ (2 * sigma * sigma));
@@ -90,8 +90,8 @@ export class mapClass {
             const minY = Math.max(0, Math.floor(cy - r));
             const maxY = Math.min(this.height - 1, Math.ceil(cy + r));
 
-            for (let y = minY; y < maxY; y++)
-                for (let x = minX; x < maxX; x++) {
+            for (let y = minY; y <= maxY; y++)
+                for (let x = minX; x <= maxX; x++) {
                     const dx = x - cx;
                     const dy = y - cy;
                     if (dx*dx + dy*dy <= r*r) { // inside circle
