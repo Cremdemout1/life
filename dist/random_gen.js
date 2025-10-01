@@ -6,7 +6,7 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 16:54:01 by ycantin           #+#    #+#             */
-/*   Updated: 2025/09/29 22:01:17 by yohan            ###   ########.fr       */
+/*   Updated: 2025/09/30 15:27:23 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 const width = 400;
@@ -27,9 +27,20 @@ export function createHeatPoints(min = 3, max = 8) {
     let temp = get_rand_coords(min, max);
     for (let i = 0; i < temp.length; i++) {
         const [x, y] = temp[i];
-        const Amplitude = getRandInt(min, max);
+        const Amplitude = getRandInt(min * 2, max * 2);
         const heat = [x, y, Amplitude];
         heats.push(heat);
     }
     return heats;
+}
+export function createFeeders(min = 3, max = 8) {
+    let feeders = [];
+    let temp = get_rand_coords(min, max);
+    for (let i = 0; i < temp.length; i++) {
+        const [x, y] = temp[i];
+        const FoodAmount = getRandInt(min, max);
+        const feederCenter = [x, y, FoodAmount];
+        feeders.push(feederCenter);
+    }
+    return feeders;
 }
