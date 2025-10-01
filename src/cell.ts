@@ -6,7 +6,7 @@
 /*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/30 21:58:10 by yohan             #+#    #+#             */
-/*   Updated: 2025/10/01 23:53:20 by ycantin          ###   ########.fr       */
+/*   Updated: 2025/10/02 00:09:26 by ycantin          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -268,5 +268,7 @@ class  NN{
         //continue with reinforcement learning. not supervised learning
         //make function that receives a reward (loss) and back propagates from this.
         // the function will be called from Cell class after doing an action
+
+        //add an array of function to pointers in the cell tht will activate in accordance to the prediction output
     }
 }
