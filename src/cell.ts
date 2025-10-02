@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   cell.ts                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
+/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/30 21:58:10 by yohan             #+#    #+#             */
-/*   Updated: 2025/10/02 00:09:26 by ycantin          ###   ########.fr       */
+/*   Updated: 2025/10/02 14:59:53 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -112,7 +112,7 @@ class UnsupervisedNN {
         this.b2 = createBias(this.latent_layer_size);
         this.b3 = createBias(this.hidden_layer_size);
         this.b4 = createBias(this.input_size);
-        this.policyNetwork = new NN();
+        this.policyNetwork = new NN(this.cell);
     }
 
     private modelInput(): number[] {
@@ -219,6 +219,7 @@ class UnsupervisedNN {
 class  NN{
     learning_rate: number;
     epoch: number;
+    cell: Cell;
 
     input_size: number = 8;
     hidden_layer_size: number = 16;
@@ -230,9 +231,10 @@ class  NN{
     b1: number[];
     b2: number[];
 
-    constructor(learning_rate: number = 0.01, iterations: number = 50) {
+    constructor(cell: Cell, learning_rate: number = 0.01, iterations: number = 50) {
         this.learning_rate = learning_rate;
         this.epoch = iterations;
+        this.cell = cell;
 
         this.W1 = [];
         this.W2 = [];
@@ -258,17 +260,123 @@ class  NN{
         return result;
     }
     
-    public predict(input: number[]) {
+    public predict(input: number[]): number[] {
         const static_hidden_layer: number[] = this.vectMatrixMult(input, this.W1);
         const activated_hidden_layer = static_hidden_layer.map((x, i) => this.sigmoid(x + this.b1[i]));
         
         const static_output:number[] = this.vectMatrixMult(activated_hidden_layer, this.W2);
         const plausibilities: number[] = static_output.map((x, i) => this.sigmoid(x + this.b2[i]));
 
+        return plausibilities;
         //continue with reinforcement learning. not supervised learning
         //make function that receives a reward (loss) and back propagates from this.
         // the function will be called from Cell class after doing an action
 
         //add an array of function to pointers in the cell tht will activate in accordance to the prediction output
+
+        // reward must be a vector to allow MORL (multiple objectives i.e. survival, energy efficiency and reproduction)
+    
+        /*1. Define Objectives Clearly
+
+        Decide the reward dimensions (your reward vector).
+        Examples:
+
+        energy (food intake, conserving energy)
+
+        survival (avoiding heat, staying alive)
+
+        cooperation (pheromone use, sharing food)
+
+        exploration (discovering new cells on the map)
+
+        Write down what counts as positive vs negative for each.
+
+        2. Map Cell Actions to Reward Vectors
+
+        For each action (move, eat, leavePheromone, expand, contract, etc.), design a reward contribution vector.
+        Example:
+
+        eat() → [+0.5 energy, +0.1 survival, -0.1 exploration]
+
+        move() → [-0.01 energy, 0.0 survival, +0.1 exploration]
+
+        Normalize reward values so no single dimension dominates accidentally.
+
+        3. Extend Neural Network for MORL
+
+        Change reward signal from scalar → vector.
+
+        Pick a method to process multi-objectives:
+
+        Shared encoder, multiple heads (one head per objective).
+
+        Or single head but reward aggregation strategy (weighted sum with dynamic weights).
+
+        Add ability to store past state, action, reward vectors for training.
+
+        4. Learning Strategy
+
+        Implement Pareto-based update (don’t collapse objectives too early):
+
+        Each gradient step tries to improve without worsening others.
+
+        OR implement dynamic scalarization:
+
+        Combine reward vector → scalar with context-dependent weights (if low energy → weight energy high).
+
+        Decide if you want evolutionary variety (different cells learn different objective balances).
+
+        5. Backpropagation Adaptation
+
+        Update NN so that loss is vector-based:
+
+        Either compute loss per objective and backprop separately.
+
+        Or scalarize on the fly and backprop one scalar loss.
+
+        Ensure gradients from each objective are combined (weighted or multi-head).
+
+        6. Action Selection (Policy)
+
+        Define how a cell chooses an action given predicted outputs:
+
+        Highest utility according to current scalarized reward.
+
+        Or random sample weighted by plausibilities (encourages exploration).
+
+        If multiple objectives are equally valid, keep nondominated actions in play.
+
+        7. Simulation Integration
+
+        After each timestep:
+
+        Cell performs action chosen by NN.
+
+        Environment updates state (energy, heat, pheromone, etc.).
+
+        Reward vector is computed.
+
+        Cell’s NN receives reward vector → update step.
+
+        Make sure death is handled (e.g., survival reward penalty if energy ≤ 0).
+
+        8. Experiment with Trade-Offs
+
+        Run simulations with fixed weights → see specialized behaviors.
+
+        Run with dynamic weights → see adaptive strategies.
+
+        Track different cell populations to check for emergent roles (explorer, feeder, survivor, helper).
+
+        9. Debugging / Analysis
+
+        Log each cell’s reward vector history.
+
+        Visualize how objectives trade off (Pareto front).
+
+        Verify no single objective always dominates.*/
     }
 }
+
+
+// when pheromone is caught and helps a cell, send rewards (negative or positive) to cell who put down pheromone by cell_id;
