@@ -3,14 +3,15 @@
 /*                                                        :::      ::::::::   */
 /*   map.ts                                             :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
+/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/10/01 23:35:06 by ycantin          ###   ########.fr       */
+/*   Updated: 2025/10/16 10:47:51 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 import { createFeeders, createHeatPoints } from "./random_gen.js";
+import { Cell } from "./cell.js";
 
 function getColor(value: number): [number, number, number] {
 
@@ -28,8 +29,8 @@ function getColor(value: number): [number, number, number] {
 
 export class mapClass {
 
-    width: number = 400;
-    height: number = 400;
+    public width: number = 400;
+    public height: number = 400;
     canvasMap: HTMLCanvasElement;
     context: CanvasRenderingContext2D;
     heatPoints: Array<[number, number, number]>;
@@ -101,6 +102,33 @@ export class mapClass {
         }
     }
 
+    // Draw a cell at position [x, y] as black
+    public drawCell(x: number, y: number) {
+        const ctx = this.context;
+        ctx.fillStyle = "black";
+        ctx.fillRect(x, y, 1, 1); // assuming 1px per grid cell
+    }
+
+    public redrawCellBackground(x: number, y: number) {
+        const ctx = this.context;
+        const [heat, feeder] = this.grid[y][x];
+
+        let r: number, g: number, b: number;
+
+        if (feeder != 0) {
+            // feeder color (light green)
+            r = 204; g = 255; b = 153;
+        } else {
+            // heat color
+            const maxHeat = 255; // or compute from map if needed
+            [r, g, b] = getColor(heat / maxHeat);
+        }
+
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(x, y, 1, 1);
+    }
+
+
     colorMap() {
         let maxHeat = 0;
         for (let y = 0; y < 400; y++)
@@ -111,7 +139,7 @@ export class mapClass {
 
         // Normalize values to 0–1
         const normalizedGrid = this.grid.map(row =>
-            row.map(([heat, feeder, pheremone]) => [heat / maxHeat, feeder, 0] as [number, number, number])
+            row.map(([heat, feeder, pheromone]) => [heat / maxHeat, feeder, 0] as [number, number, number])
           );
         const imageData = this.context.createImageData(this.width, this.height);
 
@@ -139,16 +167,20 @@ export class mapClass {
         this.context.putImageData(imageData, 0, 0);
     }
 
-
-    drawPoints(cellSize: number = 2) {
-        this.context.fillStyle = "red";
-        for (const [x, y] of this.heatPoints) {
-            const px = x * cellSize;
-            const py = y * cellSize;
-            this.context.fillRect(px, py, cellSize, cellSize);
-        }
+    createCell(id: number, x: number, y: number) { // creating cell
+        const cell = new Cell(id, x, y, this);
+        this.drawCell(x, y);
+        const step = () => {
+            cell.decideAndAct();
+            // console.log(cell.position);
+            requestAnimationFrame(step); // schedule next step
+        };
+    
+        requestAnimationFrame(step);
     }
+    
 }
+
 
 const myMap = mapClass.create("map");
 
@@ -157,6 +189,8 @@ if (myMap) {
   myMap.gaussianDistribution();
   myMap.fillFeeders();
   myMap.colorMap();
+  myMap.createCell(1, 200, 200);
+  
 } else {
   console.warn("Canvas not found");
 }

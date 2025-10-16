@@ -6,13 +6,33 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 16:54:01 by ycantin           #+#    #+#             */
-/*   Updated: 2025/09/30 15:27:23 by yohan            ###   ########.fr       */
+/*   Updated: 2025/10/01 16:11:38 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 const width = 400;
 const length = 400;
-function getRandInt(min, max) {
+export function getRandInt(min, max) {
     return Math.floor(Math.random() * (max - min) + min);
+}
+function randomWeight() {
+    return Math.random() * 2 - 1;
+}
+export function createWeightMatrix(rowNum, columnNum) {
+    const W = [];
+    for (let y = 0; y < rowNum; y++) {
+        const row = [];
+        for (let x = 0; x < columnNum; x++) {
+            row.push(randomWeight());
+        }
+        W.push(row);
+    }
+    return W;
+}
+export function createBias(size) {
+    const vect = [];
+    for (let x = 0; x < size; x++)
+        vect.push(0.01);
+    return vect;
 }
 export function get_rand_coords(minAmount, maxAmount) {
     const points = [];
