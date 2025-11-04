@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   cell.ts                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
+/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/30 21:58:10 by yohan             #+#    #+#             */
-/*   Updated: 2025/10/16 11:49:49 by yohan            ###   ########.fr       */
+/*   Updated: 2025/11/04 18:20:51 by ycantin          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -59,12 +59,14 @@ const rewardsMap: Record<string, RewardVector> = {
 };  
 
 export class Cell {
-    energy: number = 1; //energy will be percentage form 0 to 1
-    id: number;
-    age: number;
-    heatTolerance: number; //will be between 0 and 1 for efficiency
-    timeToEat: number = 0.2; // seconds it takes to consume 0.5 feed.
-    map: mapClass;
+    energy:         number = 1; //energy will be percentage form 0 to 1
+    id:             number;
+    age:            number;
+    heatTolerance:  number; //will be between 0 and 1 for efficiency
+    timeToEat:      number = 0.2; // seconds it takes to consume 0.5 feed.
+    map:            mapClass;
+    size:           number;
+    speed:          number;
     
     position: [number, number];
     neighbourhood: Array<[number, number, number]>; //get radius around cell
@@ -83,7 +85,8 @@ export class Cell {
         this.brain = new UnsupervisedNN(this);
 
         this.previousEnergy = 1;
-
+        this.size = 1;  //not yet put into works
+        this.speed = 1; //not yet put into works
     }
 
     private getNeighbourhood(): Array<[number, number, number]> {
@@ -109,7 +112,10 @@ export class Cell {
             //optionally color the trail
     };
 
-    private divide(){}; //creates similar cell with slight weight adjustment(adds variety to evolution)
+    private divide(){
+        this.map.createCell(this.id + 1, this.position[0] + 1, this.position[1] + 1);
+        this.energy /= 2;
+    }; //creates similar cell with slight weight adjustment(adds variety to evolution)
 
     private move(direction: number){ // moves cost energy (0.01?) // 0 = up | 1 = down | 2 = left | 3 = right | 4 = none
         let [x, y] = this.position;
@@ -149,7 +155,16 @@ export class Cell {
 
     private contract(){}; // heat affects less, moves faster
 
-    private expand(){}; //heat affects more but can eat faster and/or could eat smaller cells?, moves slower
+    private expand(){
+        if (this.size < 10)
+            this.size += 1;
+        // else: punish NN
+        if (this.speed > 1)
+            this.speed -= 1;
+        // else: punish NN
+        if (this.size < 10 && this.speed > 1)
+            this.heatTolerance -= 2;
+    }; //heat affects more but can eat faster and/or could eat smaller cells?, moves slower
 
     private computeLossMSE(predictedValues: number[], reward: RewardVector): number {
         const target = [
@@ -222,124 +237,69 @@ export class Cell {
         return grad;
     }
 
-//     public decideAndAct() {
-//         const functionList = [
-//             () => this.move(0),
-//             () => this.move(1),
-//             () => this.move(2),
-//             () => this.move(3),
-//             () => this.move(4),
-//             () => this.eat(),
-//             () => this.divide(),
-//             () => this.contract(),
-//             () => this.expand(),
-//             () => this.leavePheromone(-1), //danger
-//             () => this.leavePheromone(1), //safe
-//         ];
-//         const baseMetabolicCost = 0.002; // lose 0.2% energy per frame
-//         this.energy -= baseMetabolicCost;
-//         this.previousEnergy = this.energy;
-//         console.log("energy level: ", this.energy);
-//         const actionProbabilities = this.brain.think();
-//         console.log(actionProbabilities);
-//         const threshold = 0.6;
-//         const candidates = actionProbabilities
-//         .map((val, idx) => ({ idx, val }))
-//         .filter(a => a.val >= threshold);
-
-//         const chosenActions: number[] = [];
-//         for (const a of candidates.sort((a, b) => b.val - a.val)) {
-//             if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
-//                 chosenActions.push(a.idx);
-//         }
+    public decideAndAct() {
+        const functionList = [
+            () => this.move(0),
+            () => this.move(1),
+            () => this.move(2),
+            () => this.move(3),
+            () => this.move(4),
+            () => this.eat(),
+            () => this.divide(),
+            () => this.contract(),
+            () => this.expand(),
+            () => this.leavePheromone(-1), // danger
+            () => this.leavePheromone(1),  // safe
+        ];
         
-//         for (const i of chosenActions) // do actions
-//             functionList[i]();
+        this.previousEnergy = this.energy;
+        const actionProbabilities = this.brain.think();
 
-//         const reward = this.computeReward(chosenActions);
-//         const totalReward = (
-//             reward.energy * 0.4 +
-//             reward.survival * 0.3 +
-//             reward.reproduction * 0.2 +
-//             reward.exploration * 0.1
-//         );
+        //might change this to only 2 most likely actions
+        const threshold = 0.6;
+        const candidates = actionProbabilities
+            .map((val, idx) => ({ idx, val }))
+            .filter(a => a.val >= threshold);
+
+        const chosenActions: number[] = [];
+        for (const a of candidates.sort((a, b) => b.val - a.val)) {
+            if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
+                chosenActions.push(a.idx);
+        }
         
-//         // The target probability distribution now depends on the reward
-//         const targetProbabilities = actionProbabilities.map((_, idx) => {
-//             // Encourage chosen actions proportionally to how good the reward was
-//             if (chosenActions.includes(idx))
-//                 return Math.min(1, totalReward); // strong reward → stronger target
-//             else
-//                 return Math.max(0, 1 - totalReward); // discourage others
-//         });
+        // Execute chosen actions
+        for (const i of chosenActions)
+            functionList[i]();
+
+        // Base metabolic decay (always)
+        const baseMetabolicCost = 0.002;
+        this.energy -= baseMetabolicCost;
+        console.log("energy level: ", this.energy);
+        // Compute reward feedback
+        const reward = this.computeReward(chosenActions);
+        const totalReward = (
+            reward.energy * 0.4 +
+            reward.survival * 0.3 +
+            reward.reproduction * 0.2 +
+            reward.exploration * 0.1
+        );
         
-//         const MSEgradient = this.MSEgradient(targetProbabilities, actionProbabilities);
-//         const loss = this.computeLossMSE(actionProbabilities, reward);
-//         this.brain.policyNetwork.backPropagate(loss, MSEgradient);       
-//     }
-// }
+        //  Reward-modulated learning target
+        const targetProbabilities = actionProbabilities.map((_, idx) => {
+            if (chosenActions.includes(idx))
+                return Math.min(1, totalReward);
+            else
+                return Math.max(0, 1 - totalReward);
+        });
+        
+        const MSEgradient = this.MSEgradient(targetProbabilities, actionProbabilities);
+        const loss = this.computeLossMSE(actionProbabilities, reward);
+        this.brain.policyNetwork.backPropagate(loss, MSEgradient);
 
-public decideAndAct() {
-    const functionList = [
-        () => this.move(0),
-        () => this.move(1),
-        () => this.move(2),
-        () => this.move(3),
-        () => this.move(4),
-        () => this.eat(),
-        () => this.divide(),
-        () => this.contract(),
-        () => this.expand(),
-        () => this.leavePheromone(-1), // danger
-        () => this.leavePheromone(1),  // safe
-    ];
-    
-    this.previousEnergy = this.energy;
-    const actionProbabilities = this.brain.think();
-    const threshold = 0.6;
-    const candidates = actionProbabilities
-        .map((val, idx) => ({ idx, val }))
-        .filter(a => a.val >= threshold);
-
-    const chosenActions: number[] = [];
-    for (const a of candidates.sort((a, b) => b.val - a.val)) {
-        if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
-            chosenActions.push(a.idx);
-    }
-    
-    // Execute chosen actions
-    for (const i of chosenActions)
-        functionList[i]();
-
-    // 🌡️ Base metabolic decay (always)
-    const baseMetabolicCost = 0.002;
-    this.energy -= baseMetabolicCost;
-    console.log("energy level: ", this.energy);
-    // 🧾 Compute reward feedback
-    const reward = this.computeReward(chosenActions);
-    const totalReward = (
-        reward.energy * 0.4 +
-        reward.survival * 0.3 +
-        reward.reproduction * 0.2 +
-        reward.exploration * 0.1
-    );
-    
-    // 🎯 Reward-modulated learning target
-    const targetProbabilities = actionProbabilities.map((_, idx) => {
-        if (chosenActions.includes(idx))
-            return Math.min(1, totalReward);
-        else
-            return Math.max(0, 1 - totalReward);
-    });
-    
-    const MSEgradient = this.MSEgradient(targetProbabilities, actionProbabilities);
-    const loss = this.computeLossMSE(actionProbabilities, reward);
-    this.brain.policyNetwork.backPropagate(loss, MSEgradient);
-
-    // // 💀 Check for death
-    // if (this.energy <= 0) {
-    //     this.dieAndRespawn();
-    }
+        // //  Check for death
+        // if (this.energy <= 0) {
+        //     this.dieAndRespawn();
+        }
 }
 
 

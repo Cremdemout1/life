@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   map.ts                                             :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
+/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/10/16 10:47:51 by yohan            ###   ########.fr       */
+/*   Updated: 2025/11/04 18:08:20 by ycantin          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -36,6 +36,7 @@ export class mapClass {
     heatPoints: Array<[number, number, number]>;
     feederCenters: Array<[number, number, number]>;
     grid: Array<Array<[number, number, number]>>;
+    cellId: Map<number, Cell>;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvasMap = canvas;
@@ -54,6 +55,7 @@ export class mapClass {
             this.grid[y][x][0] = A;
         for (const[x, y, F] of this.feederCenters) //adds feeder center points
             this.grid[y][x][1] = F;
+        this.cellId = new Map();
     }
     
     static create(canvasId: string = "map"): mapClass | null {
@@ -169,6 +171,7 @@ export class mapClass {
 
     createCell(id: number, x: number, y: number) { // creating cell
         const cell = new Cell(id, x, y, this);
+        this.cellId.set(id, cell);
         this.drawCell(x, y);
         const step = () => {
             cell.decideAndAct();
