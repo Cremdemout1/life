@@ -6,7 +6,7 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/11/06 19:23:10 by yohan            ###   ########.fr       */
+/*   Updated: 2025/11/06 20:03:56 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -124,16 +124,27 @@ export class mapClass {
             ctx.fillRect(x, y, cell.size, cell.size);
     }
 
-    public redrawCellBackground(x: number, y: number) {
+    // public redrawCellBackground(x: number, y: number, size: number) {
+    //     const ctx = this.context;
+    //     let r: number, g: number, b: number;
+
+    //     r = this.background[y][x][0];
+    //     g = this.background[y][x][1];
+    //     b = this.background[y][x][2];
+
+    //     ctx.fillStyle = `rgb(${r},${g},${b})`;
+    //     ctx.fillRect(x, y, size, size);
+    // }
+    public redrawCellBackground(x: number, y: number, size: number) {
         const ctx = this.context;
-        let r: number, g: number, b: number;
-
-        r = this.background[y][x][0];
-        g = this.background[y][x][1];
-        b = this.background[y][x][2];
-
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-        ctx.fillRect(x, y, 1, 1);
+    
+        for (let yy = y; yy <= y + size && yy < this.background.length; yy++) {
+            for (let xx = x; xx <= x + size && xx < this.background[0].length; xx++) {
+                const [r, g, b] = this.background[yy][xx];
+                ctx.fillStyle = `rgb(${r},${g},${b})`;
+                ctx.fillRect(xx, yy, 1, 1);
+            }=
+        }
     }
 
 

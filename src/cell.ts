@@ -6,7 +6,7 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/30 21:58:10 by yohan             #+#    #+#             */
-/*   Updated: 2025/11/06 19:22:09 by yohan            ###   ########.fr       */
+/*   Updated: 2025/11/06 19:58:56 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -215,7 +215,7 @@ export class Cell {
         const [x, y] = this.position;
     
         // Clear visual footprint by redrawing background tile
-        this.map.redrawCellBackground(x, y);
+        this.map.redrawCellBackground(x, y, this.size);
     
         // Optionally reset grid state (remove any pheromone left there)
         this.map.grid[y][x][2] = 0;
@@ -472,7 +472,7 @@ export class Cell {
         this.energy -= heatDamage + edgePenalty;
     
         // Visual updates
-        this.map.redrawCellBackground(oldX, oldY);
+        this.map.redrawCellBackground(oldX, oldY, this.size);
         this.map.drawCell(this.id, x, y);
         this.position = [x, y];
     
