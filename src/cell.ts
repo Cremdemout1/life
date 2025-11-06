@@ -3,15 +3,16 @@
 /*                                                        :::      ::::::::   */
 /*   cell.ts                                            :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: ycantin <ycantin@student.42.fr>            +#+  +:+       +#+        */
+/*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/30 21:58:10 by yohan             #+#    #+#             */
-/*   Updated: 2025/11/04 18:20:51 by ycantin          ###   ########.fr       */
+/*   Updated: 2025/11/06 19:22:09 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 import { getRandInt, createWeightMatrix, createBias } from './random_gen.js'
 import { mapClass } from './map.js';
+import { UnsupervisedNN } from './unsupervisedNetwork.js';
 
 interface rewardVector {
     energy: number;
@@ -59,7 +60,7 @@ const rewardsMap: Record<string, RewardVector> = {
 };  
 
 export class Cell {
-    energy:         number = 1; //energy will be percentage form 0 to 1
+    energy:         number = 10;
     id:             number;
     age:            number;
     heatTolerance:  number; //will be between 0 and 1 for efficiency
@@ -74,26 +75,35 @@ export class Cell {
     brain: UnsupervisedNN;
 
     previousEnergy: number;
+    lastDivisionTime: number = 0;
+    divisionCooldown: number = 20;
     
-    constructor(id: number, x: number, y: number, map: mapClass) {
+    // Eating state tracking
+    eatingProgress: number = 0;
+    isEating: boolean = false;
+    eatingStartTime: number = 0;
+    
+    constructor(id: number, x: number, y: number, map: mapClass, brain: UnsupervisedNN | null = null) {
         this.id = id;
         this.age = 0;
         this.position = [x, y];
         this.heatTolerance = getRandInt(1, 65) / 100;
         this.map = map;
-        this.neighbourhood = this.getNeighbourhood();// make function to get small env
-        this.brain = new UnsupervisedNN(this);
-
+        this.neighbourhood = this.getNeighbourhood();
         this.previousEnergy = 1;
         this.size = 1;  //not yet put into works
         this.speed = 1; //not yet put into works
+        if (brain !== null)
+            this.brain = brain;
+        else
+            this.brain = new UnsupervisedNN(this);
     }
 
     private getNeighbourhood(): Array<[number, number, number]> {
         const neighbourhood: Array<[number, number, number]> = [];
         let cx = this.position[0];
         let cy = this.position[1];
-        let r = 2; //other positions around current position (will make 5x5)
+        let r = 100; //other positions around current position (will make 21 * 21)
         const minX = Math.max(0, Math.floor(cx - r));
         const maxX = Math.min(this.map.width - 1, Math.ceil(cx + r));
         const minY = Math.max(0, Math.floor(cy - r));
@@ -106,65 +116,524 @@ export class Cell {
         return neighbourhood;
     };
 
-    public leavePheromone(type: number) {  //should leave trail of -1 if dangerous or 1 if good for survival and 0 for asking help (wants feed from other)
-        let [x, y] = this.position;
-            this.map.grid[y][x][2] = type;
-            //optionally color the trail
-    };
-
-    private divide(){
-        this.map.createCell(this.id + 1, this.position[0] + 1, this.position[1] + 1);
-        this.energy /= 2;
-    }; //creates similar cell with slight weight adjustment(adds variety to evolution)
-
-    private move(direction: number){ // moves cost energy (0.01?) // 0 = up | 1 = down | 2 = left | 3 = right | 4 = none
-        let [x, y] = this.position;
-        switch(direction) {
-            case 0: this.position[1] -= 1; break; // up
-            case 1: this.position[1] += 1; break; // down
-            case 2: this.position[0] -= 1; break; // left
-            case 3: this.position[0] += 1; break; // right
-            case 4: break; // none
-            
-        }
-        // Optionally clamp to map bounds:
-        this.position[0] = Math.max(0, Math.min(this.map.width - 1, this.position[0]));
-        this.position[1] = Math.max(0, Math.min(this.map.height - 1, this.position[1]));
+    // public leavePheromone(type: number) {
+    //     let [x, y] = this.position;
+    //     this.map.grid[y][x][2] = type;
+    //     return { success: true, penalty: 0 };
+    // };
+    public leavePheromone(type: number) {
+        const [x, y] = this.position;
         
+        // Get current tile information
+        const heat = this.map.grid[y][x][0];
+        const food = this.map.grid[y][x][1];
+        
+        // Normalize heat (0 to 1)
         const maxHeat = Math.max(...this.map.heatPoints.map(([_, __, A]) => A));
-        const heat = this.map.grid[this.position[1]][this.position[0]][0];
         const normalizedHeat = Math.min(1, heat / maxHeat);
+        
+        // Determine if this location is actually dangerous or safe
+        const isHighHeat = normalizedHeat > this.heatTolerance + 0.15; // Significantly above tolerance
+        const hasFood = food > 0.2; // Meaningful amount of food
+        
+        // Check nearby tiles for food (look ahead in all directions)
+        let foodNearby = false;
+        const searchRadius = 2;
+        for (let dy = -searchRadius; dy <= searchRadius; dy++) {
+            for (let dx = -searchRadius; dx <= searchRadius; dx++) {
+                const nx = x + dx;
+                const ny = y + dy;
+                if (nx >= 0 && nx < this.map.width && ny >= 0 && ny < this.map.height) {
+                    if (this.map.grid[ny][nx][1] > 0.2) {
+                        foodNearby = true;
+                        break;
+                    }
+                }
+            }
+            if (foodNearby) break;
+        }
+        
+        // Determine the "correct" pheromone for this location
+        let correctPheromone: number;
+        if (isHighHeat) {
+            correctPheromone = -1; // Should be danger
+        } else if (hasFood || foodNearby) {
+            correctPheromone = 1; // Should be safe
+        } else {
+            // Neutral zone - both pheromones are acceptable but with smaller penalty
+            correctPheromone = 0; // Neutral indicator
+        }
+        
+        // Calculate penalty for mismatched pheromone
+        let penalty = 0;
+        let reason = '';
+        
+        if (correctPheromone === -1 && type === 1) {
+            // Marked safe but it's dangerous (high heat)
+            penalty = 0.15;
+            reason = 'misleading_safe_in_danger';
+        } else if (correctPheromone === 1 && type === -1) {
+            // Marked danger but it's safe (has food or leads to food)
+            penalty = 0.10;
+            reason = 'misleading_danger_in_safe';
+        } else if (correctPheromone === 0) {
+            // Neutral zone - small penalty for potentially unnecessary pheromone
+            penalty = 0.02;
+            reason = 'pheromone_in_neutral_zone';
+        } else {
+            // Correct pheromone!
+            penalty = 0;
+            reason = 'accurate_pheromone';
+        }
+        // const ctx = this.map.context;
+        // if (type === 1)
+        //     ctx.fillStyle = "green";
+        // else
+        //     ctx.fillStyle = "orange";
+        // ctx.fillRect(x, y, this.size, this.size);
+        // Apply penalty
+        this.energy -= penalty;
+        
+        // Place the pheromone regardless (the cell is learning)
+        this.map.grid[y][x][2] = type;
+        
+        return { 
+            success: penalty === 0, 
+            penalty, 
+            reason,
+            wasCorrect: penalty === 0 || penalty === 0.02
+        };
+    }
 
-        const stress = Math.max(0, normalizedHeat - this.heatTolerance);
-        const stressIntensity = Math.pow(stress, 2.2);
-        const heatDamage = stressIntensity * 0.01;
-
-        this.energy -= heatDamage;
-
+    private removeCell() {
+        // Ensure the cell still exists
+        this.map.cellNum--;
+        const temp: Cell | undefined = this.map.cellId.get(this.id);
+        if (!temp) return;
+        
+        this.map.deadCells.set(temp.age, temp);
+        const [x, y] = this.position;
+    
+        // Clear visual footprint by redrawing background tile
         this.map.redrawCellBackground(x, y);
-        this.map.drawCell(this.position[0], this.position[1]);
-    };
+    
+        // Optionally reset grid state (remove any pheromone left there)
+        this.map.grid[y][x][2] = 0;
+        
+        // Remove the cell from map data
+        this.map.cellId.delete(this.id);
+        this.map.cellNum = Math.max(0, this.map.cellNum - 1);
+    
+        if (this.map.cellNum < 3) {
+            const maxAge = Math.max(...this.map.deadCells.keys());
+            const oldestCell = this.map.deadCells.get(maxAge);
+            const nextId = this.map.cellId.size > 0 
+            ? Math.max(...this.map.cellId.keys()) + 1 
+            : 1;
+            const [x, y] = this.position;
+            this.map.createCell(x, y, nextId, undefined, oldestCell);
+        }
+        if (this.map.deadCells.size > 1000)
+            this.map.deadCells.delete(Math.min(...this.map.deadCells.keys()));        
+    }
+    
+    private divide() {
+        const minEnergyToDivide = 0.6;
+        let reason = '';
+        let penalty = 0;
+    
+        // Can't divide if too little energy
+        if (this.energy < minEnergyToDivide) {
+            reason = 'insufficient_energy';
+            penalty = 0.08;
+        }
+        // Cooldown logic
+        else if (this.age - this.lastDivisionTime < this.divisionCooldown) {
+            reason = 'cooldown_active';
+            penalty = 0.03;
+        }
+        else {
+            // Find an empty spot around the parent
+            const [x, y] = this.position;
+            const neighbors: [number, number][] = [
+                [x + 1, y], [x - 1, y],
+                [x, y + 1], [x, y - 1],
+                [x + 1, y + 1], [x - 1, y - 1],
+                [x + 1, y - 1], [x - 1, y + 1]
+            ];
+    
+            let emptySpot: [number, number] | null = null;
+            for (const [nx, ny] of neighbors) {
+                if (nx >= 0 && nx < this.map.width && ny >= 0 && ny < this.map.height) {
+                    const occupied = Array.from(this.map.cellId.values())
+                        .some(cell => cell.position[0] === nx && cell.position[1] === ny);
+                    if (!occupied) {
+                        emptySpot = [nx, ny];
+                        break;
+                    }
+                }
+            }
+    
+            // If no spot is found, penalize and quit
+            if (!emptySpot) {
+                reason = 'no_space';
+                penalty = 0.04;
+            } else {
+                // Try to create the new cell — the map handles population limits internally
+                const newId = Math.max(0, ...Array.from(this.map.cellId.keys())) + 1;
+                const success = this.map.createCell(emptySpot[0], emptySpot[1], newId, undefined, this);
+    
+                if (!success) {
+                    reason = 'population_cap_reached';
+                    penalty = 0.05;
+                } else {
+                    // Successful division
+                    this.energy *= 0.4;
+                    this.lastDivisionTime = this.age;
+                    return { success: true, penalty: 0, reason: 'divided' };
+                }
+            }
+        }
+    
+        // Apply energy penalty if division failed
+        this.energy -= penalty;
+        return { success: false, penalty, reason };
+        // return {succes: true }
+    }
+    
+    // private move(direction: number) {
+    //     const [oldX, oldY] = this.position;
+    //     let [x, y] = [oldX, oldY];
+    
+    //     // Movement logic
+    //     switch (direction) {
+    //         case 0: y -= 1; break; // up
+    //         case 1: y += 1; break; // down
+    //         case 2: x -= 1; break; // left
+    //         case 3: x += 1; break; // right
+    //         case 4:
+    //             return { success: true, penalty: 0, reward: 0, reason: 'stayed' };
+    //     }
+    
+    //     let movedOutOfBounds = false;
+    //     if (x < 0 || x >= this.map.width || y < 0 || y >= this.map.height)
+    //         movedOutOfBounds = true;
+    
+    //     // Clamp position
+    //     x = Math.max(0, Math.min(this.map.width - 1, x));
+    //     y = Math.max(0, Math.min(this.map.height - 1, y));
+    
+    //     // Edge penalty — stronger near the corners
+    //     const edgeDistanceX = Math.min(x, this.map.width - 1 - x);
+    //     const edgeDistanceY = Math.min(y, this.map.height - 1 - y);
+    //     const edgeDistance = Math.min(edgeDistanceX, edgeDistanceY);
+    //     const edgePenalty = edgeDistance < 2 ? 0.03 * (2 - edgeDistance) : 0;
+    
+    //     // Heat effect
+    //     const maxHeat = Math.max(...this.map.heatPoints.map(([_, __, A]) => A));
+    //     const heat = this.map.grid[y][x][0];
+    //     const normalizedHeat = Math.min(1, heat / maxHeat);
+    //     const stress = Math.max(0, normalizedHeat - this.heatTolerance);
+    //     const heatDamage = Math.pow(stress, 2.2) * 0.01;
+    
+    //     // Pheromone reward logic
+    //     const pheromoneHere = this.map.grid[y][x][2] || 0;
+    //     const pheromoneBefore = this.map.grid[oldY][oldX][2] || 0;
+    
+    //     // Reward if pheromone concentration improves
+    //     let pheromoneDelta = pheromoneHere - pheromoneBefore;
+    
+    //     // Normalize reward magnitude
+    //     const pheromoneReward = Math.tanh(pheromoneDelta * 2.5) * 0.05; 
+    //     // → moves up to ±0.05 reward/penalty, depending on gradient direction
+    
+    //     // Energy cost
+    //     this.energy -= heatDamage + edgePenalty;
+    
+    //     // Visual updates
+    //     this.map.redrawCellBackground(oldX, oldY);
+    //     this.map.drawCell(this.id, x, y);
+    
+    //     this.position = [x, y];
+    
+    //     // Eating interruption
+    //     let eatInterruptPenalty = 0;
+    //     if (this.isEating && (oldX !== x || oldY !== y)) {
+    //         this.isEating = false;
+    //         this.eatingProgress = 0;
+    //         eatInterruptPenalty = 0.03;
+    //         this.energy -= eatInterruptPenalty;
+    //     }
+    
+    //     if (movedOutOfBounds) {
+    //         const penalty = 0.02;
+    //         this.energy -= penalty;
+    //         return {
+    //             success: false,
+    //             penalty: penalty + eatInterruptPenalty + edgePenalty,
+    //             reward: pheromoneReward,
+    //             reason: 'out_of_bounds'
+    //         };
+    //     }
+    
+    //     return {
+    //         success: true,
+    //         penalty: eatInterruptPenalty + edgePenalty,
+    //         reward: pheromoneReward,
+    //         reason:
+    //             movedOutOfBounds ? 'out_of_bounds' :
+    //             eatInterruptPenalty > 0 ? 'interrupted_eating' :
+    //             edgePenalty > 0 ? 'too_close_to_border' :
+    //             pheromoneReward > 0 ? 'followed_good_pheromone' :
+    //             pheromoneReward < 0 ? 'followed_bad_pheromone' :
+    //             'moved'
+    //     };
+    // }
+    private move(direction: number) {
+        const [oldX, oldY] = this.position;
+        let [x, y] = [oldX, oldY];
+        
+        // Movement logic
+        switch (direction) {
+            case 0: y -= 1; break; // up
+            case 1: y += 1; break; // down
+            case 2: x -= 1; break; // left
+            case 3: x += 1; break; // right
+            case 4:
+                return { success: true, penalty: 0, reward: 0, reason: 'stayed' };
+        }
+    
+        let movedOutOfBounds = false;
+        if (x < 0 || x >= this.map.width || y < 0 || y >= this.map.height) {
+            movedOutOfBounds = true;
+        }
+    
+        // Clamp position
+        x = Math.max(0, Math.min(this.map.width - 1, x));
+        y = Math.max(0, Math.min(this.map.height - 1, y));
+    
+        // Edge penalty
+        const edgeDistanceX = Math.min(x, this.map.width - 1 - x);
+        const edgeDistanceY = Math.min(y, this.map.height - 1 - y);
+        const edgeDistance = Math.min(edgeDistanceX, edgeDistanceY);
+        const edgePenalty = edgeDistance < 3 ? 0.04 * (3 - edgeDistance) : 0;
+    
+        // FIXED: Better heat damage calculation
+        const maxHeat = Math.max(...this.map.heatPoints.map(([_, __, A]) => A));
+        const heat = this.map.grid[y][x][0];
+        const normalizedHeat = Math.min(1, heat / maxHeat);
+        const stress = Math.max(0, normalizedHeat - this.heatTolerance);
+        const heatDamage = Math.pow(stress, 2.2) * 0.02; // Increased damage
+    
+        // ADDED: Food gradient reward
+        const oldFood = this.map.grid[oldY][oldX][1];
+        const newFood = this.map.grid[y][x][1];
+        const foodDelta = newFood - oldFood;
+        let foodReward = 0;
+        
+        if (foodDelta > 0) {
+            // Moving toward food - strong positive reward
+            foodReward = Math.min(0.2, foodDelta * 5);
+        } else if (foodDelta < 0) {
+            // Moving away from food - mild negative reward
+            foodReward = Math.max(-0.05, foodDelta * 2);
+        }
+        
+        // Big bonus if standing on food
+        if (newFood > 0.3) {
+            foodReward += 0.15;
+        }
+    
+        // FIXED: Better heat gradient reward
+        const oldHeat = this.map.grid[oldY][oldX][0];
+        const oldNormalizedHeat = Math.min(1, oldHeat / maxHeat);
+        const oldStress = Math.max(0, oldNormalizedHeat - this.heatTolerance);
+        const newStress = stress;
+        
+        let heatReward = 0;
+        if (oldStress > 0 && newStress < oldStress) {
+            // Moving away from danger - positive reward
+            heatReward = (oldStress - newStress) * 0.3;
+        } else if (newStress > oldStress) {
+            // Moving into danger - negative reward
+            heatReward = (oldStress - newStress) * 0.4; // Will be negative
+        }
+    
+        // Pheromone reward (your existing logic is good)
+        const pheromoneHere = this.map.grid[y][x][2] || 0;
+        const pheromoneBefore = this.map.grid[oldY][oldX][2] || 0;
+        let pheromoneDelta = pheromoneHere - pheromoneBefore;
+        const pheromoneReward = Math.tanh(pheromoneDelta * 2.5) * 0.05;
+    
+        // COMBINED REWARD: Food + Heat + Pheromone
+        const totalReward = foodReward + heatReward + pheromoneReward;
+    
+        // Apply energy costs
+        this.energy -= heatDamage + edgePenalty;
+    
+        // Visual updates
+        this.map.redrawCellBackground(oldX, oldY);
+        this.map.drawCell(this.id, x, y);
+        this.position = [x, y];
+    
+        // Eating interruption
+        let eatInterruptPenalty = 0;
+        if (this.isEating && (oldX !== x || oldY !== y)) {
+            this.isEating = false;
+            this.eatingProgress = 0;
+            eatInterruptPenalty = 0.05; // Increased penalty
+            this.energy -= eatInterruptPenalty;
+        }
+    
+        if (movedOutOfBounds) {
+            const penalty = 0.05;
+            this.energy -= penalty;
+            return {
+                success: false,
+                penalty: penalty + eatInterruptPenalty + edgePenalty,
+                reward: totalReward,
+                reason: 'out_of_bounds'
+            };
+        }
+    
+        // Determine reason for logging
+        let reason = 'moved';
+        if (eatInterruptPenalty > 0) reason = 'interrupted_eating';
+        else if (edgePenalty > 0) reason = 'too_close_to_border';
+        else if (foodReward > 0.1) reason = 'moving_toward_food';
+        else if (heatReward > 0.1) reason = 'escaping_heat';
+        else if (heatReward < -0.1) reason = 'entering_danger';
+        else if (pheromoneReward > 0) reason = 'followed_good_pheromone';
+        else if (pheromoneReward < 0) reason = 'followed_bad_pheromone';
+    
+        return {
+            success: true,
+            penalty: eatInterruptPenalty + edgePenalty,
+            reward: totalReward,
+            reason: reason
+        };
+    }
+      
 
-    private eat(){};// eats when in feeder area
+    private eat() {
+        const [x, y] = this.position;
+        const currentFood = this.map.grid[y][x][1]; // Food is at index 1
+        
+        // Check if there's food at current position
+        if (currentFood <= 0) {
+            const penalty = 0.05;
+            this.energy -= penalty;
+            this.isEating = false;
+            this.eatingProgress = 0;
+            return { success: false, penalty, reason: 'no_food' };
+        }
+        
+        if (!this.isEating) {
+            // Start eating
+            this.isEating = true;
+            this.eatingProgress = 0;
+            this.eatingStartTime = this.age;
+            return { success: true, penalty: 0, reason: 'started_eating' };
+        }
+        
+        // Continue eating
+        this.eatingProgress += 1; // Increment by frame
+        
+        // Calculate ticks needed based on timeToEat and size
+        // Larger cells eat faster, smaller cells eat slower
+        const sizeModifier = this.size / 5; // size ranges 1-10, so this gives 0.2 to 2.0
+        const effectiveTimeToEat = this.timeToEat / sizeModifier;
+        const ticksNeeded = effectiveTimeToEat * 60; // Assuming 60 ticks per second
+        
+        if (this.eatingProgress >= ticksNeeded) {
+            // Finished eating
+            const foodConsumed = Math.min(0.5, currentFood);
+            this.map.grid[y][x][1] -= foodConsumed;
+            this.energy = Math.min(1, this.energy + foodConsumed);
+            
+            // Reset eating state
+            this.isEating = false;
+            this.eatingProgress = 0;
+            
+            return { success: true, penalty: 0, reason: 'completed_eating', energyGained: foodConsumed };
+        }
+        
+        return { success: true, penalty: 0, reason: 'eating_in_progress' };
+    }
 
-    // collectFeed(){}; //collect extra feed
+    private contract() {
+        let penalty = 0;
+        let failureReasons: string[] = [];
+        let success = true;
+        
+        if (this.size <= 1) {
+            penalty += 0.03;
+            failureReasons.push('min_size');
+            success = false;
+        } else {
+            this.size -= 1;
+        }
+        
+        if (this.speed >= 10) {
+            penalty += 0.03;
+            failureReasons.push('max_speed');
+            success = false;
+        } else {
+            this.speed += 1;
+        }
+        
+        if (this.size > 1 && this.speed < 10) {
+            this.heatTolerance = Math.min(1, this.heatTolerance + 0.02);
+        }
+        
+        if (penalty > 0) {
+            this.energy -= penalty;
+        }
+        
+        return { 
+            success, 
+            penalty, 
+            reason: failureReasons.length > 0 ? failureReasons.join('_and_') : 'contracted' 
+        };
+        // return { success: false, penalty: 0, reason: 'contract_not_implemented' };
+    }
 
-    // giveFeed(){}; //give feed to nearby cell
-
-    // receiveFeed(){}; //receive feed from nearby cell
-
-    private contract(){}; // heat affects less, moves faster
-
-    private expand(){
-        if (this.size < 10)
+    private expand() {
+        let penalty = 0;
+        let failureReasons: string[] = [];
+        let success = true;
+        
+        if (this.size >= 10) {
+            penalty += 0.03;
+            failureReasons.push('max_size');
+            success = false;
+        } else {
             this.size += 1;
-        // else: punish NN
-        if (this.speed > 1)
+        }
+        
+        if (this.speed <= 1) {
+            penalty += 0.03;
+            failureReasons.push('min_speed');
+            success = false;
+        } else {
             this.speed -= 1;
-        // else: punish NN
-        if (this.size < 10 && this.speed > 1)
-            this.heatTolerance -= 2;
-    }; //heat affects more but can eat faster and/or could eat smaller cells?, moves slower
+        }
+        
+        if (this.size < 10 && this.speed > 1) {
+            this.heatTolerance = Math.max(0, this.heatTolerance - 0.02);
+        }
+        
+        if (penalty > 0) {
+            this.energy -= penalty;
+        }
+        
+        return { 
+            success, 
+            penalty, 
+            reason: failureReasons.length > 0 ? failureReasons.join('_and_') : 'expanded' 
+        };
+        // return { success: false, penalty: 0, reason: 'contract_not_implemented' };
+    }
 
     private computeLossMSE(predictedValues: number[], reward: RewardVector): number {
         const target = [
@@ -183,8 +652,7 @@ export class Cell {
         return loss / target.length;    
     }
 
-
-    private computeReward(chosenActions: number[]): rewardVector {
+    private computeReward(chosenActions: number[], actionResults: any[]): rewardVector {
         const reward: rewardVector = {
             energy: 0,
             survival: 0,
@@ -195,39 +663,60 @@ export class Cell {
     
         // Base rewards from chosen actions
         const actionNames = Object.keys(rewardsMap);
-        for (const i of chosenActions) {
+        for (let idx = 0; idx < chosenActions.length; idx++) {
+            const i = chosenActions[idx];
             const actionName = actionNames[i];
             const actionReward = rewardsMap[actionName];
-            for (const key in actionReward)
-                reward[key as keyof rewardVector] += actionReward[key as keyof rewardVector];
+            const result = actionResults[idx];
+            
+            // Apply base rewards only if action succeeded
+            if (result.success) {
+                for (const key in actionReward) {
+                    reward[key as keyof rewardVector] += actionReward[key as keyof rewardVector];
+                }
+            }
+            
+            // Apply penalties for failed actions
+            if (!result.success) {
+                reward.energy -= result.penalty * 2; // Double penalty in reward calculation
+                reward.survival -= result.penalty;
+            }
+            
+            // Bonus for successful eating completion
+            if (actionName === 'eat' && result.reason === 'completed_eating') {
+                reward.energy += 0.3;
+                reward.survival += 0.1;
+            }
+            
+            // Small bonus for maintaining eating focus
+            if (actionName === 'eat' && result.reason === 'eating_in_progress') {
+                reward.survival += 0.02;
+            }
         }
     
         // --- Energy-based dynamic reward ---
         const energyChange = this.energy - this.previousEnergy;
     
         if (energyChange > 0)
-            reward.energy += energyChange * 10; // Gaining energy is good
+            reward.energy += energyChange * 10;
         else if (energyChange < 0)
-            reward.energy += energyChange * 5; // Losing energy is bad (less punishing than death)
+            reward.energy += energyChange * 5;
     
         // --- Survival ---
         if (this.energy <= 0.1)
-            reward.survival -= 2; // near death penalty
+            reward.survival -= 2;
         else if (this.energy >= 0.8)
-            reward.survival += 0.5; // stable energy = good survival
+            reward.survival += 0.5;
     
         // --- Exploration ---
-        // Encourage movement into slightly different areas (e.g., heat changes)
         const currentHeat = this.map.grid[this.position[1]][this.position[0]][0];
         const normalizedHeat = Math.min(1, currentHeat / Math.max(...this.map.heatPoints.map(([_, __, A]) => A)));
     
-        // Reward exploring regions with new heat profiles
         const heatDelta = Math.abs(normalizedHeat - this.heatTolerance);
         reward.exploration += heatDelta * 0.1;
     
         return reward;
     }
-    
 
     private MSEgradient(input: number[], output: number[]): number[] {
         const grad: number[] = [];
@@ -238,6 +727,9 @@ export class Cell {
     }
 
     public decideAndAct() {
+        if (this.energy <= 0)
+            this.removeCell();
+        this.age++;
         const functionList = [
             () => this.move(0),
             () => this.move(1),
@@ -248,398 +740,126 @@ export class Cell {
             () => this.divide(),
             () => this.contract(),
             () => this.expand(),
-            () => this.leavePheromone(-1), // danger
-            () => this.leavePheromone(1),  // safe
+            () => this.leavePheromone(-1),
+            () => this.leavePheromone(1),
         ];
         
         this.previousEnergy = this.energy;
-        const actionProbabilities = this.brain.think();
+        let actionProbabilities = this.brain.think();
 
-        //might change this to only 2 most likely actions
-        const threshold = 0.6;
-        const candidates = actionProbabilities
-            .map((val, idx) => ({ idx, val }))
-            .filter(a => a.val >= threshold);
+        // DEFENSIVE CHECK: Validate probabilities
+    if (!actionProbabilities || actionProbabilities.length !== 11) {
+        console.error(`Cell ${this.id}: Invalid action probabilities`, actionProbabilities);
+        actionProbabilities = new Array(11).fill(1/11); // Default uniform distribution
+    }
+    
+    // DEFENSIVE CHECK: Clean NaN and Infinity
+    actionProbabilities = actionProbabilities.map((p, idx) => {
+        if (!isFinite(p) || isNaN(p)) {
+            console.warn(`Cell ${this.id}: Invalid probability at index ${idx}: ${p}`);
+            return 0.1; // Default small probability
+        }
+        return Math.max(0, Math.min(1, p)); // Clamp to [0, 1]
+    });
 
-        const chosenActions: number[] = [];
-        for (const a of candidates.sort((a, b) => b.val - a.val)) {
-            if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
-                chosenActions.push(a.idx);
+    const threshold = 0.6;
+    const candidates = actionProbabilities
+        .map((val, idx) => ({ idx, val }))
+        .filter(a => a.val >= threshold);
+
+    const chosenActions: number[] = [];
+    for (const a of candidates.sort((a, b) => b.val - a.val)) {
+        if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
+            chosenActions.push(a.idx);
+    }
+    
+    // If no actions passed threshold, pick the best one
+    if (chosenActions.length === 0) {
+        const bestIdx = actionProbabilities.indexOf(Math.max(...actionProbabilities));
+        chosenActions.push(bestIdx);
+    }
+    
+    // DEFENSIVE CHECK: Validate indices before execution
+    const actionResults: any[] = [];
+    for (const i of chosenActions) {
+        if (i < 0 || i >= functionList.length || typeof functionList[i] !== 'function') {
+            console.error(`Cell ${this.id}: Invalid action index ${i}`);
+            continue;
+        }
+        const result = functionList[i]();
+        actionResults.push(result);
+    }
+
+        
+        // const threshold = 0.6;
+        // const candidates = actionProbabilities
+        //     .map((val, idx) => ({ idx, val }))
+        //     .filter(a => a.val >= threshold);
+
+        // const chosenActions: number[] = [];
+        // for (const a of candidates.sort((a, b) => b.val - a.val)) {
+        //     if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
+        //         chosenActions.push(a.idx);
+        // }
+        
+        // // If no actions passed threshold, pick the best one
+        // if (chosenActions.length === 0) {
+        //     const bestIdx = actionProbabilities.indexOf(Math.max(...actionProbabilities));
+        //     chosenActions.push(bestIdx);
+        // }
+        
+        // // Execute chosen actions and collect results
+        // const actionResults: any[] = [];
+        // for (const i of chosenActions) {
+        //     const result = functionList[i]();
+        //     actionResults.push(result);
+        // }
+
+        // Base metabolic decay
+        const baseMetabolicCost = 0.01;
+        const sizeCost = this.size * 0.001;
+        this.energy -= (baseMetabolicCost + sizeCost);
+        
+        // Additional cost while eating (concentration)
+        if (this.isEating) {
+            this.energy -= 0.001;
         }
         
-        // Execute chosen actions
-        for (const i of chosenActions)
-            functionList[i]();
-
-        // Base metabolic decay (always)
-        const baseMetabolicCost = 0.002;
-        this.energy -= baseMetabolicCost;
-        console.log("energy level: ", this.energy);
-        // Compute reward feedback
-        const reward = this.computeReward(chosenActions);
+        // console.log("energy level: ", this.energy);
+        
+        // Compute reward feedback with action results
+        const reward = this.computeReward(chosenActions, actionResults);
         const totalReward = (
-            reward.energy * 0.4 +
+            reward.energy * 0.6 +
             reward.survival * 0.3 +
-            reward.reproduction * 0.2 +
+            reward.reproduction * 0.05 +
             reward.exploration * 0.1
         );
         
-        //  Reward-modulated learning target
-        const targetProbabilities = actionProbabilities.map((_, idx) => {
-            if (chosenActions.includes(idx))
-                return Math.min(1, totalReward);
-            else
-                return Math.max(0, 1 - totalReward);
+        // Reward-modulated learning target
+        const targetProbabilities = actionProbabilities.map((prob, idx) => {
+            if (chosenActions.includes(idx)) {
+                // Actions that were chosen
+                const actionIdx = chosenActions.indexOf(idx);
+                const result = actionResults[actionIdx];
+                
+                if (result.success) {
+                    // Successful action - reinforce
+                    return Math.min(1, prob + totalReward * 0.1);
+                } else {
+                    // Failed action - punish strongly
+                    return Math.max(0, prob - Math.abs(totalReward) * 0.2);
+                }
+            } else {
+                // Actions that were not chosen
+                return Math.max(0, prob * 0.95); // Slight decay
+            }
         });
         
-        const MSEgradient = this.MSEgradient(targetProbabilities, actionProbabilities);
+        const MSEgradient = this.MSEgradient(actionProbabilities, targetProbabilities);
         const loss = this.computeLossMSE(actionProbabilities, reward);
         this.brain.policyNetwork.backPropagate(loss, MSEgradient);
-
-        // //  Check for death
-        // if (this.energy <= 0) {
-        //     this.dieAndRespawn();
-        }
-}
-
-
-//////////////////////////////////////////////////////////////////////////////////////
-//                                                                                  //
-//////////////////////////////////////////////////////////////////////////////////////
-
-class UnsupervisedNN {
-    
-    learning_rate: number = 0.1;
-    epochs: number = 50;
-    
-    input: number[]; //size = 79
-    input_size: number = 79;
-    hidden_layer_size: number = 32;
-    latent_layer_size: number = 8;
-    
-    W1: number[][]; //32 x 79 used for encoder
-    W2: number[][]; //8 x 32 used for encoder
-    W3: number[][]; //32 x 8 used for decoder
-    W4: number[][]; //79 x 32 uded for decoder
-
-    b1: number[]; //32 x 1
-    b2: number[]; //8 x 1
-    b3: number[]; //32 x 1
-    b4: number[]; //79 x 1
-    
-    cell: Cell;
-    policyNetwork: NN;
-    
-    constructor(cell: Cell) {
-        //input: position of cell, radius around cell which willbe array of arrays in which each array has a position, a heat, food and pheromone. pheromone is 1 0 or -1, energy left, heatTolerance, timeToeat
-        this.cell = cell;
-        this.input = this.modelInput();
-        this.W1 = createWeightMatrix(this.hidden_layer_size, this.input_size);
-        this.W2 = createWeightMatrix(this.latent_layer_size, this.hidden_layer_size);
-        this.W3 = createWeightMatrix(this.hidden_layer_size, this.latent_layer_size);
-        this.W4 = createWeightMatrix(this.input_size, this.hidden_layer_size);
-
-        this.b1 = createBias(this.hidden_layer_size);
-        this.b2 = createBias(this.latent_layer_size);
-        this.b3 = createBias(this.hidden_layer_size);
-        this.b4 = createBias(this.input_size);
-        this.policyNetwork = new NN(this.cell);
-    }
-
-    private modelInput(): number[] {
-        const input: Array<any> = [];
-        let heat: Array<number> = [], feed: Array<number> = [], pheromone: Array<number> = [];
-        for (let i = 0; i < this.cell.neighbourhood.length; i++) {
-            heat[i] = this.cell.neighbourhood[i]?.[0] ?? 0;
-            feed[i] = this.cell.neighbourhood[i]?.[1] ?? 0;
-            pheromone[i] = this.cell.neighbourhood[i]?.[2] ?? 0;
-            
-        }
-        input.push(...heat, ...feed, ...pheromone, 
-            this.cell.age, this.cell.energy, 
-            this.cell.heatTolerance, this.cell.timeToEat);
-        console.log(input);
-        return input;
-    }
-
-    private ReLU(value: number) { //activation function
-        return (Math.max(0, value));
-    }
-
-    private forwardPass(input: number[], weights: number[][], bias: number[]): number[] {
-        const newLayer: number[] = [];
-        
-        for (let row = 0; row < weights.length; row++) {
-            let sum = 0;
-            for (let col = 0; col < weights[0].length; col++) {
-                sum += weights[row][col] * input[col];;
-            }
-            newLayer.push(sum + bias[row]);
-        }
-        const activatedLayer = newLayer.map(v => this.ReLU(v));
-        return activatedLayer;
-    }
-
-    private MSE(input: number[], output: number[]): number { //mean squared error
-        let loss = 0;
-        for (let i = 0; i < this.input.length; i++) {
-            let diff = input[i] - output[i];
-            loss += diff * diff;
-        }
-        return loss / input.length;
-    }
-
-    private MSEgradient(input: number[], output: number[]): number[] {
-        const grad: number[] = [];
-        const len = input.length;
-        for (let i = 0; i < len; i++)
-            grad[i] = 2 * (output[i] - input[i]) / len;
-        return grad;
-    }
-
-    private backwardPass(previousLayer: number[], //back propagation
-                 currentActivatedLayer: number[], 
-                 gradOutputs: number[], 
-                 weights: number[][], 
-                 bias: number[]): number[] {
-        
-        const gradientInput: number[] = new Array(previousLayer.length).fill(0); //init gradientInput
-        
-        for (let i = 0; i < weights.length; i++) {
-            const ReLUDerivative = currentActivatedLayer[i] > 0 ? 1 : 0;
-            
-            for (let j = 0; j < previousLayer.length; j++) {
-                const grad = gradOutputs[i] * ReLUDerivative * previousLayer[j];
-                gradientInput[j] += gradOutputs[i] * ReLUDerivative * weights[i][j];
-                weights[i][j] -= this.learning_rate * grad;
-            }
-            bias[i] -= this.learning_rate * gradOutputs[i] * ReLUDerivative;
-        }
-        return gradientInput;
-    }
-
-    private AutoEncoder(): number[] {
-        //encode
-        const hiddenLayer = this.forwardPass(this.input, this.W1, this.b1);
-        const latentLayer = this.forwardPass(hiddenLayer, this.W2, this.b2);
-
-        //decode
-        const hiddenLayerPrime = this.forwardPass(latentLayer, this.W3, this.b3);
-        const inputPrime = this.forwardPass(hiddenLayerPrime, this.W4, this.b4);
-
-        //loss function
-        const loss: number = this.MSE(this.input, inputPrime);
-
-        //back propagation
-        const GradientHiddenLayerPrime = this.backwardPass(hiddenLayerPrime, inputPrime, this.MSEgradient(this.input, inputPrime), this.W4, this.b4);
-        const GradientLatentLayer = this.backwardPass(latentLayer, hiddenLayerPrime, GradientHiddenLayerPrime, this.W3, this.b3);
-        const GradientHiddenLayer = this.backwardPass(hiddenLayer, latentLayer, GradientLatentLayer, this.W2, this.b2);
-        this.backwardPass(this.input, hiddenLayer, GradientHiddenLayer, this.W1, this.b1);
-        return latentLayer;
-    }
-
-    public think() { //predict
-        const instincts = this.AutoEncoder();
-        return this.policyNetwork.predict(instincts);
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////////////
-//                                                                                  //
-//////////////////////////////////////////////////////////////////////////////////////
-
-class  NN{
-    learning_rate: number;
-    epoch: number;
-    cell: Cell;
-
-    input_size: number = 8;
-    hidden_layer_size: number = 16;
-    output_size: number = 11;
-
-    input: number[];
-    activated_hidden_layer: number[];
-    plausibilities: number[];
-    
-    W1: number[][];
-    W2: number[][];
-
-    b1: number[];
-    b2: number[];
-
-    constructor(cell: Cell, learning_rate: number = 0.01, iterations: number = 50) {
-        this.learning_rate = learning_rate;
-        this.epoch = iterations;
-        this.cell = cell;
-
-        this.input = [];
-        this.activated_hidden_layer = [];
-        this.plausibilities = [];
-        this.W1 = [];
-        this.W2 = [];
-        this.W1 = createWeightMatrix(this.hidden_layer_size, this.input_size);
-        this.W2 = createWeightMatrix(this.output_size, this.hidden_layer_size);
-        this.b1 = createBias(this.hidden_layer_size);
-        this.b2 = createBias(this.output_size);
-    }
-
-    private sigmoid(x: number): number {
-        return 1 / (1 + Math.exp(-x));
-    }
-
-    private vectMatrixMult(vector: number[], matrix: number[][]): number[] {
-        const result: number[] = [];
-        for (let row = 0; row < matrix.length; row++) {
-            let sum = 0;
-            for (let col = 0; col < matrix[0].length; col++) {
-                sum += matrix[row][col] * vector[col];;
-            }
-            result.push(sum);
-        }
-        return result;
-    }
-
-    private backwardPass(previousLayer: number[], //back propagation
-                 currentActivatedLayer: number[], 
-                 gradOutputs: number[], 
-                 weights: number[][], 
-                 bias: number[]): number[] {
-        
-        const gradientInput: number[] = new Array(previousLayer.length).fill(0); //init gradientInput
-        
-        for (let i = 0; i < weights.length; i++) {
-            const sigmoidDerivative = currentActivatedLayer[i] * (1 - currentActivatedLayer[i]);
-            
-            for (let j = 0; j < previousLayer.length; j++) {
-                const grad = gradOutputs[i] * sigmoidDerivative * previousLayer[j];
-                gradientInput[j] += gradOutputs[i] * sigmoidDerivative * weights[i][j];
-                weights[i][j] -= this.learning_rate * grad;
-            }
-            bias[i] -= this.learning_rate * gradOutputs[i] * sigmoidDerivative;
-        }
-        return gradientInput;
-    }
-
-    public backPropagate(loss: number, MSEgradient: number[]) {
-        const newMSE = this.backwardPass(this.activated_hidden_layer, this.plausibilities, MSEgradient, this.W2, this.b2);
-        this.backwardPass(this.input, this.activated_hidden_layer, newMSE, this.W1, this.b1);
-    }
-    
-    public predict(input: number[]): number[] {
-        const static_hidden_layer: number[] = this.vectMatrixMult(input, this.W1);
-        this.activated_hidden_layer = static_hidden_layer.map((x, i) => this.sigmoid(x + this.b1[i]));
-        
-        const static_output = this.vectMatrixMult(this.activated_hidden_layer, this.W2);
-        this.plausibilities = static_output.map((x, i) => this.sigmoid(x + this.b2[i]));
-
-        return this.plausibilities;
-        //continue with reinforcement learning. not supervised learning
-        //make function that receives a reward (loss) and back propagates from this.
-        // the function will be called from Cell class after doing an action
-
-        //add an array of function to pointers in the cell tht will activate in accordance to the prediction output
-
-        // reward must be a vector to allow MORL (multiple objectives i.e. survival, energy efficiency and reproduction)
-    
-        /*1. Define Objectives Clearly
-
-        Decide the reward dimensions (your reward vector).
-        Examples:
-
-        energy (food intake, conserving energy)
-
-        survival (avoiding heat, staying alive)
-
-        cooperation (pheromone use, sharing food)
-
-        exploration (discovering new cells on the map)
-
-        Write down what counts as positive vs negative for each.
-
-        2. Map Cell Actions to Reward Vectors
-
-        For each action (move, eat, leavePheromone, expand, contract, etc.), design a reward contribution vector.
-        Example:
-
-        eat() → [+0.5 energy, +0.1 survival, -0.1 exploration]
-
-        move() → [-0.01 energy, 0.0 survival, +0.1 exploration]
-
-        Normalize reward values so no single dimension dominates accidentally.
-
-        3. Extend Neural Network for MORL
-
-        Change reward signal from scalar → vector.
-
-        Pick a method to process multi-objectives:
-
-        Shared encoder, multiple heads (one head per objective).
-
-        Or single head but reward aggregation strategy (weighted sum with dynamic weights).
-
-        Add ability to store past state, action, reward vectors for training.
-
-        4. Learning Strategy
-
-        Implement Pareto-based update (don’t collapse objectives too early):
-
-        Each gradient step tries to improve without worsening others.
-
-        OR implement dynamic scalarization:
-
-        Combine reward vector → scalar with context-dependent weights (if low energy → weight energy high).
-
-        Decide if you want evolutionary variety (different cells learn different objective balances).
-
-        5. Backpropagation Adaptation
-
-        Update NN so that loss is vector-based:
-
-        Either compute loss per objective and backprop separately.
-
-        Or scalarize on the fly and backprop one scalar loss.
-
-        Ensure gradients from each objective are combined (weighted or multi-head).
-
-        6. Action Selection (Policy)
-
-        Define how a cell chooses an action given predicted outputs:
-
-        Highest utility according to current scalarized reward.
-
-        Or random sample weighted by plausibilities (encourages exploration).
-
-        If multiple objectives are equally valid, keep nondominated actions in play.
-
-        7. Simulation Integration
-
-        After each timestep:
-
-        Cell performs action chosen by NN.
-
-        Environment updates state (energy, heat, pheromone, etc.).
-
-        Reward vector is computed.
-
-        Cell’s NN receives reward vector → update step.
-
-        Make sure death is handled (e.g., survival reward penalty if energy ≤ 0).
-
-        8. Experiment with Trade-Offs
-
-        Run simulations with fixed weights → see specialized behaviors.
-
-        Run with dynamic weights → see adaptive strategies.
-
-        Track different cell populations to check for emergent roles (explorer, feeder, survivor, helper).
-
-        9. Debugging / Analysis
-
-        Log each cell’s reward vector history.
-
-        Visualize how objectives trade off (Pareto front).
-
-        Verify no single objective always dominates.*/
+// Ensure the action probabilities match the function list length
     }
 }
 

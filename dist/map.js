@@ -6,7 +6,7 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/10/16 10:47:51 by yohan            ###   ########.fr       */
+/*   Updated: 2025/11/06 19:23:10 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 import { createFeeders, createHeatPoints } from "./random_gen.js";
@@ -22,8 +22,8 @@ function getColor(value) {
 // this.grid[y][x][0, 1, 2] -> 0 = heat(danger) | 1 = food source amplitude | 2 = pheremone layer
 export class mapClass {
     constructor(canvas) {
-        this.width = 400;
-        this.height = 400;
+        this.width = 600;
+        this.height = 600;
         this.canvasMap = canvas;
         if (!this.canvasMap)
             throw ("Canvas not found");
@@ -32,11 +32,15 @@ export class mapClass {
             throw ("Context of canvas not found");
         this.heatPoints = createHeatPoints();
         this.feederCenters = createFeeders();
-        this.grid = Array.from({ length: 400 }, () => Array.from({ length: 400 }, () => [0, 0, 0]));
+        this.grid = Array.from({ length: 600 }, () => Array.from({ length: 600 }, () => [0, 0, 0]));
+        this.background = Array.from({ length: 600 }, () => Array.from({ length: 600 }, () => [0, 0, 0]));
         for (const [x, y, A] of this.heatPoints) //adds heat center points
             this.grid[y][x][0] = A;
         for (const [x, y, F] of this.feederCenters) //adds feeder center points
             this.grid[y][x][1] = F;
+        this.cellId = new Map();
+        this.deadCells = new Map();
+        this.cellNum = 0;
     }
     static create(canvasId = "map") {
         const canvas = document.getElementById(canvasId);
@@ -61,7 +65,7 @@ export class mapClass {
                 }
             }
         }
-        console.log(this.grid);
+        // console.log(this.grid);
     }
     fillFeeders() {
         for (const [cx, cy, F] of this.feederCenters) {
@@ -81,33 +85,28 @@ export class mapClass {
         }
     }
     // Draw a cell at position [x, y] as black
-    drawCell(x, y) {
+    drawCell(id, x, y) {
         const ctx = this.context;
         ctx.fillStyle = "black";
-        ctx.fillRect(x, y, 1, 1); // assuming 1px per grid cell
+        const cell = this.cellId.get(id);
+        if (!cell)
+            ctx.fillRect(x, y, 1, 1);
+        else
+            ctx.fillRect(x, y, cell.size, cell.size);
     }
     redrawCellBackground(x, y) {
         const ctx = this.context;
-        const [heat, feeder] = this.grid[y][x];
         let r, g, b;
-        if (feeder != 0) {
-            // feeder color (light green)
-            r = 204;
-            g = 255;
-            b = 153;
-        }
-        else {
-            // heat color
-            const maxHeat = 255; // or compute from map if needed
-            [r, g, b] = getColor(heat / maxHeat);
-        }
+        r = this.background[y][x][0];
+        g = this.background[y][x][1];
+        b = this.background[y][x][2];
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(x, y, 1, 1);
     }
     colorMap() {
         let maxHeat = 0;
-        for (let y = 0; y < 400; y++)
-            for (let x = 0; x < 400; x++) {
+        for (let y = 0; y < 600; y++)
+            for (let x = 0; x < 600; x++) {
                 if (this.grid[y][x][0] > maxHeat)
                     maxHeat = this.grid[y][x][0];
             }
@@ -122,6 +121,9 @@ export class mapClass {
                     imageData.data[idx + 1] = 255;
                     imageData.data[idx + 2] = 153;
                     imageData.data[idx + 3] = 255; // fully opaque
+                    this.background[y][x][0] = 204;
+                    this.background[y][x][1] = 255;
+                    this.background[y][x][2] = 153;
                 }
                 else {
                     const [r, g, b] = getColor(normalizedGrid[y][x][0]);
@@ -129,30 +131,85 @@ export class mapClass {
                     imageData.data[idx + 1] = g;
                     imageData.data[idx + 2] = b;
                     imageData.data[idx + 3] = 255; // fully opaque
+                    this.background[y][x][0] = r;
+                    this.background[y][x][1] = g;
+                    this.background[y][x][2] = b;
                 }
             }
         }
         this.context.putImageData(imageData, 0, 0);
     }
-    createCell(id, x, y) {
-        const cell = new Cell(id, x, y, this);
-        this.drawCell(x, y);
+    createCell(x, y, id, brain, parent) {
+        if (this.cellNum > 300)
+            return false;
+        this.cellNum++;
+        // Auto-generate new ID if none is given
+        const newId = id !== null && id !== void 0 ? id : Math.max(0, ...Array.from(this.cellId.keys())) + 1;
+        // Determine which brain to use
+        let cell;
+        if (!brain) {
+            if (parent) {
+                brain = parent.brain.clone(null, true);
+                cell = new Cell(newId, x, y, this, brain);
+            }
+            else
+                cell = new Cell(newId, x, y, this);
+        }
+        if (!cell)
+            throw ("Error: cell not created");
+        this.cellId.set(newId, cell);
+        if (brain) {
+            brain.cell = cell;
+            brain.policyNetwork.cell = cell;
+        }
+        this.drawCell(newId, x, y);
         const step = () => {
             cell.decideAndAct();
-            // console.log(cell.position);
-            requestAnimationFrame(step); // schedule next step
+            requestAnimationFrame(step);
         };
         requestAnimationFrame(step);
+        return true;
+    }
+    updateControlPanel() {
+        var _a, _b;
+        const avgEnergy = (Array.from(this.cellId.values()).reduce((acc, val) => acc + val.energy, 0) / this.cellNum);
+        const countElem = document.getElementById('cell-count');
+        const energyElem = document.getElementById('avg-energy');
+        // Make sure both elements exist
+        if (!countElem || !energyElem)
+            return;
+        countElem.textContent = (_a = this.cellNum.toString()) !== null && _a !== void 0 ? _a : undefined;
+        energyElem.textContent = (_b = avgEnergy.toString()) !== null && _b !== void 0 ? _b : undefined;
     }
 }
 const myMap = mapClass.create("map");
 if (myMap) {
-    console.log("Map created", myMap);
+    //   console.log("Map created", myMap);
     myMap.gaussianDistribution();
     myMap.fillFeeders();
     myMap.colorMap();
-    myMap.createCell(1, 200, 200);
+    myMap.createCell(300, 300, 1, undefined, undefined);
+    myMap.createCell(300, 300, 2, undefined, undefined);
+    myMap.createCell(300, 300, 3, undefined, undefined);
+    setInterval(() => {
+        myMap.updateControlPanel();
+    });
 }
 else {
     console.warn("Canvas not found");
 }
+// const addCellBtn = document.getElementById('add-cell-btn');
+// if (addCellBtn && myMap) {
+//     addCellBtn.addEventListener('click', () => {
+//         // Pick a random position on the map
+//         const x = Math.floor(Math.random() * myMap.width);
+//         const y = Math.floor(Math.random() * myMap.height);
+//         // Create a new cell at that position
+//         const success = myMap.createCell(x, y);
+//         if (!success) {
+//             console.log("Could not create cell: population limit reached");
+//         } else {
+//             console.log(`Cell added at (${x}, ${y})`);
+//         }
+//     });
+// }

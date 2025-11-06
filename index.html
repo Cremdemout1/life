@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -13,9 +13,104 @@
         display: flex;
         justify-content:center;
     }
+    #control-panel {
+        border: 1px solid rgb(0, 0, 0);
+        width: 40%;
+        height: 40%;
+
+        position: absolute;
+        top: 10px; left: 50%;
+        padding: 12px;
+        background: rgba(0,0,0,0.6);
+        color: white;
+        border-radius: 12px;
+        font-family: monospace;
+    }
 </style>
 <body>
-    <canvas id="map" width="400" height="400"></canvas>
-    <script type="module" src="./dist/map.js"></script>
+    <div style="display: flex; justify-content: space-between;">
+        <canvas id="map" width="600" height="600"></canvas>
+        <script type="module" src="./dist/map.js"></script>
+        <div id="control-panel">
+            <h3>Control Center</h3>
+            <p>Cells alive: <span id="cell-count">0</span></p>
+            <p>Avg energy: <span id="avg-energy">0</span></p>
+
+            <label>Learning rate: 
+                <input id="lr-slider" type="range" min="0.001" max="0.1" step="0.001" value="0.01">
+                <span id="lr-value">0.01</span>
+            </label>
+        </div>
+    </div>
 </body>
-</html>
+</html> -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cell Simulation</title>
+  <style>
+    body {
+      margin: 0;
+      background: #1e1e1e;
+      color: white;
+      font-family: monospace;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 20px;
+      padding: 20px;
+    }
+
+    #map {
+      border: 2px solid #222;
+      background: black;
+      width: 50%;
+      height: 50%;
+      display: block;
+    }
+
+    #control-panel {
+      border: 2px solid #333;
+      width: 300px;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.7);
+      border-radius: 12px;
+    }
+
+    #control-panel h3 {
+      margin-top: 0;
+      text-align: center;
+      color: #00ffcc;
+    }
+
+    input[type="range"] {
+      width: 100%;
+    }
+
+    label {
+      display: block;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="map" width="600" height="600"></canvas>
+  <!-- <script type="module" src="./dist/map.js"></script> -->
+  <!-- <div id="control-panel">
+    <h3>Control Center</h3>
+    <p>Cells alive: <span id="cell-count">0</span></p>
+    <p>Avg energy: <span id="avg-energy">0</span></p>
+    <button id="add-cell">Add cell</button>
+
+    <label>
+        Learning rate:
+        <input id="lr-slider" type="range" min="0.001" max="0.1" step="0.001" value="0.01">
+        <span id="lr-value">0.01</span>
+      </label>
+    </div> -->
+  
+    <script type="module" src="./dist/map.js"></script>
+  </body>
+  </html>
