@@ -6,19 +6,32 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/30 21:58:10 by yohan             #+#    #+#             */
-/*   Updated: 2025/11/06 19:58:56 by yohan            ###   ########.fr       */
+/*   Updated: 2025/11/07 13:50:23 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 import { getRandInt } from './random_gen.js';
 import { UnsupervisedNN } from './unsupervisedNetwork.js';
 // Up, Down, Left, Right, None, Eat, Divide, Contract, Expand, Danger, Safe
+// const conflictMatrix = [
+//     [false, true,  true,  true,  true,  true,  false, false, false, false, false], // moveUp
+//     [true,  false, true,  true,  true,  true,  false, false, false, false, false], // moveDown
+//     [true,  true,  false, true,  true,  true,  false, false, false, false, false], // moveLeft
+//     [true,  true,  true,  false, true,  true,  false, false, false, false, false], // moveRight
+//     [true,  true,  true,  true,  false, true,  false, false, false, false, false], // moveNone
+//     [true,  true,  true,  true,  true,  false, false, false, false, false, false], // eat
+//     [false, false, false, false, false, false, false, false, false, false, false], // divide
+//     [false, false, false, false, false, false, false, false, false, false, false], // contract
+//     [false, false, false, false, false, false, false, false, false, false, false], // expand
+//     [false, false, false, false, false, false, false, false, false, false, true ],  // leavePheromoneDanger conflicts with leavePheromoneSafe
+//     [false, false, false, false, false, false, false, false, false, true,  false], // leavePheromoneSafe conflicts with leavePheromoneDanger
+// ];
 const conflictMatrix = [
-    [false, true, true, true, true, true, false, false, false, false, false], // moveUp
-    [true, false, true, true, true, true, false, false, false, false, false], // moveDown
-    [true, true, false, true, true, true, false, false, false, false, false], // moveLeft
-    [true, true, true, false, true, true, false, false, false, false, false], // moveRight
-    [true, true, true, true, false, true, false, false, false, false, false], // moveNone
-    [true, true, true, true, true, false, false, false, false, false, false], // eat
+    [false, true, true, true, false, false, false, false, false, false, false], // moveUp
+    [true, false, true, true, false, false, false, false, false, false, false], // moveDown
+    [true, true, false, true, false, false, false, false, false, false, false], // moveLeft
+    [true, true, true, false, false, false, false, false, false, false, false], // moveRight
+    [false, false, false, false, false, false, false, false, false, false, false], // moveNone
+    [false, false, false, false, false, false, false, false, false, false, false], // eat — no longer blocks movement
     [false, false, false, false, false, false, false, false, false, false, false], // divide
     [false, false, false, false, false, false, false, false, false, false, false], // contract
     [false, false, false, false, false, false, false, false, false, false, false], // expand
@@ -40,14 +53,10 @@ const rewardsMap = {
 };
 export class Cell {
     constructor(id, x, y, map, brain = null) {
-        this.energy = 10;
-        this.timeToEat = 0.2; // seconds it takes to consume 0.5 feed.
+        this.energy = 1;
         this.lastDivisionTime = 0;
-        this.divisionCooldown = 20;
-        // Eating state tracking
-        this.eatingProgress = 0;
-        this.isEating = false;
-        this.eatingStartTime = 0;
+        this.divisionCooldown = 100;
+        this.divisionAttempts = 0;
         this.id = id;
         this.age = 0;
         this.position = [x, y];
@@ -66,7 +75,7 @@ export class Cell {
         const neighbourhood = [];
         let cx = this.position[0];
         let cy = this.position[1];
-        let r = 100; //other positions around current position (will make 21 * 21)
+        let r = 20; //other positions around current position (will make 21 * 21)
         const minX = Math.max(0, Math.floor(cx - r));
         const maxX = Math.min(this.map.width - 1, Math.ceil(cx + r));
         const minY = Math.max(0, Math.floor(cy - r));
@@ -147,12 +156,12 @@ export class Cell {
             penalty = 0;
             reason = 'accurate_pheromone';
         }
-        // const ctx = this.map.context;
-        // if (type === 1)
-        //     ctx.fillStyle = "green";
-        // else
-        //     ctx.fillStyle = "orange";
-        // ctx.fillRect(x, y, this.size, this.size);
+        const ctx = this.map.context;
+        if (type === 1)
+            ctx.fillStyle = "green";
+        else
+            ctx.fillStyle = "orange";
+        ctx.fillRect(x, y, this.size, this.size);
         // Apply penalty
         this.energy -= penalty;
         // Place the pheromone regardless (the cell is learning)
@@ -178,8 +187,8 @@ export class Cell {
         this.map.grid[y][x][2] = 0;
         // Remove the cell from map data
         this.map.cellId.delete(this.id);
-        this.map.cellNum = Math.max(0, this.map.cellNum - 1);
-        if (this.map.cellNum < 3) {
+        this.map.cellNum = this.map.cellId.size;
+        if (this.map.cellNum < 10) {
             const maxAge = Math.max(...this.map.deadCells.keys());
             const oldestCell = this.map.deadCells.get(maxAge);
             const nextId = this.map.cellId.size > 0
@@ -188,25 +197,34 @@ export class Cell {
             const [x, y] = this.position;
             this.map.createCell(x, y, nextId, undefined, oldestCell);
         }
-        if (this.map.deadCells.size > 1000)
+        if (this.map.deadCells.size > 100)
             this.map.deadCells.delete(Math.min(...this.map.deadCells.keys()));
     }
     divide() {
-        const minEnergyToDivide = 0.6;
+        const minEnergyToDivide = 5;
         let reason = '';
         let penalty = 0;
+        if (this.map.cellNum > 50) {
+            reason = 'too_many_cells';
+            penalty = 0.2;
+        }
         // Can't divide if too little energy
-        if (this.energy < minEnergyToDivide) {
+        else if (this.energy < minEnergyToDivide) {
             reason = 'insufficient_energy';
-            penalty = 0.08;
+            penalty = 0.15;
         }
         // Cooldown logic
         else if (this.age - this.lastDivisionTime < this.divisionCooldown) {
             reason = 'cooldown_active';
-            penalty = 0.03;
+            penalty = 0.1;
+            this.divisionAttempts++;
+            if (this.divisionAttempts > 3) {
+                penalty = 0.2 * this.divisionAttempts;
+            }
         }
         else {
             // Find an empty spot around the parent
+            this.divisionAttempts = 0;
             const [x, y] = this.position;
             const neighbors = [
                 [x + 1, y], [x - 1, y],
@@ -228,7 +246,7 @@ export class Cell {
             // If no spot is found, penalize and quit
             if (!emptySpot) {
                 reason = 'no_space';
-                penalty = 0.04;
+                penalty = 0.08;
             }
             else {
                 // Try to create the new cell — the map handles population limits internally
@@ -236,7 +254,7 @@ export class Cell {
                 const success = this.map.createCell(emptySpot[0], emptySpot[1], newId, undefined, this);
                 if (!success) {
                     reason = 'population_cap_reached';
-                    penalty = 0.05;
+                    penalty = 0.1;
                 }
                 else {
                     // Successful division
@@ -251,80 +269,27 @@ export class Cell {
         return { success: false, penalty, reason };
         // return {succes: true }
     }
-    // private move(direction: number) {
-    //     const [oldX, oldY] = this.position;
-    //     let [x, y] = [oldX, oldY];
-    //     // Movement logic
-    //     switch (direction) {
-    //         case 0: y -= 1; break; // up
-    //         case 1: y += 1; break; // down
-    //         case 2: x -= 1; break; // left
-    //         case 3: x += 1; break; // right
-    //         case 4:
-    //             return { success: true, penalty: 0, reward: 0, reason: 'stayed' };
-    //     }
-    //     let movedOutOfBounds = false;
-    //     if (x < 0 || x >= this.map.width || y < 0 || y >= this.map.height)
-    //         movedOutOfBounds = true;
-    //     // Clamp position
-    //     x = Math.max(0, Math.min(this.map.width - 1, x));
-    //     y = Math.max(0, Math.min(this.map.height - 1, y));
-    //     // Edge penalty — stronger near the corners
-    //     const edgeDistanceX = Math.min(x, this.map.width - 1 - x);
-    //     const edgeDistanceY = Math.min(y, this.map.height - 1 - y);
-    //     const edgeDistance = Math.min(edgeDistanceX, edgeDistanceY);
-    //     const edgePenalty = edgeDistance < 2 ? 0.03 * (2 - edgeDistance) : 0;
-    //     // Heat effect
-    //     const maxHeat = Math.max(...this.map.heatPoints.map(([_, __, A]) => A));
-    //     const heat = this.map.grid[y][x][0];
-    //     const normalizedHeat = Math.min(1, heat / maxHeat);
-    //     const stress = Math.max(0, normalizedHeat - this.heatTolerance);
-    //     const heatDamage = Math.pow(stress, 2.2) * 0.01;
-    //     // Pheromone reward logic
-    //     const pheromoneHere = this.map.grid[y][x][2] || 0;
-    //     const pheromoneBefore = this.map.grid[oldY][oldX][2] || 0;
-    //     // Reward if pheromone concentration improves
-    //     let pheromoneDelta = pheromoneHere - pheromoneBefore;
-    //     // Normalize reward magnitude
-    //     const pheromoneReward = Math.tanh(pheromoneDelta * 2.5) * 0.05; 
-    //     // → moves up to ±0.05 reward/penalty, depending on gradient direction
-    //     // Energy cost
-    //     this.energy -= heatDamage + edgePenalty;
-    //     // Visual updates
-    //     this.map.redrawCellBackground(oldX, oldY);
-    //     this.map.drawCell(this.id, x, y);
-    //     this.position = [x, y];
-    //     // Eating interruption
-    //     let eatInterruptPenalty = 0;
-    //     if (this.isEating && (oldX !== x || oldY !== y)) {
-    //         this.isEating = false;
-    //         this.eatingProgress = 0;
-    //         eatInterruptPenalty = 0.03;
-    //         this.energy -= eatInterruptPenalty;
-    //     }
-    //     if (movedOutOfBounds) {
-    //         const penalty = 0.02;
-    //         this.energy -= penalty;
-    //         return {
-    //             success: false,
-    //             penalty: penalty + eatInterruptPenalty + edgePenalty,
-    //             reward: pheromoneReward,
-    //             reason: 'out_of_bounds'
-    //         };
-    //     }
-    //     return {
-    //         success: true,
-    //         penalty: eatInterruptPenalty + edgePenalty,
-    //         reward: pheromoneReward,
-    //         reason:
-    //             movedOutOfBounds ? 'out_of_bounds' :
-    //             eatInterruptPenalty > 0 ? 'interrupted_eating' :
-    //             edgePenalty > 0 ? 'too_close_to_border' :
-    //             pheromoneReward > 0 ? 'followed_good_pheromone' :
-    //             pheromoneReward < 0 ? 'followed_bad_pheromone' :
-    //             'moved'
-    //     };
-    // }
+    eat() {
+        const [x, y] = this.position;
+        const currentFood = this.map.grid[y][x][1];
+        // No food at current position
+        if (currentFood <= 0) {
+            const penalty = 0.05;
+            this.energy -= penalty;
+            return { success: false, penalty, reason: 'no_food' };
+        }
+        // Immediate eating with size-based consumption
+        const sizeModifier = this.size / 5; // Larger cells eat more
+        const foodConsumed = Math.min(0.5 * sizeModifier, currentFood);
+        this.map.grid[y][x][1] -= foodConsumed;
+        this.energy = Math.min(1, this.energy + foodConsumed);
+        return {
+            success: true,
+            penalty: 0,
+            reason: 'ate',
+            energyGained: foodConsumed
+        };
+    }
     move(direction) {
         const [oldX, oldY] = this.position;
         let [x, y] = [oldX, oldY];
@@ -343,7 +308,7 @@ export class Cell {
                 x += 1;
                 break; // right
             case 4:
-                return { success: true, penalty: 0, reward: 0, reason: 'stayed' };
+                return { success: true, penalty: 0.001, reward: 0, reason: 'stayed' };
         }
         let movedOutOfBounds = false;
         if (x < 0 || x >= this.map.width || y < 0 || y >= this.map.height) {
@@ -356,50 +321,45 @@ export class Cell {
         const edgeDistanceX = Math.min(x, this.map.width - 1 - x);
         const edgeDistanceY = Math.min(y, this.map.height - 1 - y);
         const edgeDistance = Math.min(edgeDistanceX, edgeDistanceY);
-        const edgePenalty = edgeDistance < 3 ? 0.04 * (3 - edgeDistance) : 0;
-        // FIXED: Better heat damage calculation
+        const edgePenalty = edgeDistance < 3 ? 0.1 * (3 - edgeDistance) : 0;
+        // Heat damage calculation
         const maxHeat = Math.max(...this.map.heatPoints.map(([_, __, A]) => A));
         const heat = this.map.grid[y][x][0];
         const normalizedHeat = Math.min(1, heat / maxHeat);
         const stress = Math.max(0, normalizedHeat - this.heatTolerance);
-        const heatDamage = Math.pow(stress, 2.2) * 0.02; // Increased damage
-        // ADDED: Food gradient reward
+        const heatDamage = Math.pow(stress, 2.2) * 0.02;
+        // Food gradient reward
         const oldFood = this.map.grid[oldY][oldX][1];
         const newFood = this.map.grid[y][x][1];
         const foodDelta = newFood - oldFood;
         let foodReward = 0;
         if (foodDelta > 0) {
-            // Moving toward food - strong positive reward
-            foodReward = Math.min(0.2, foodDelta * 5);
+            foodReward = Math.min(0.4, foodDelta * 5);
         }
         else if (foodDelta < 0) {
-            // Moving away from food - mild negative reward
             foodReward = Math.max(-0.05, foodDelta * 2);
         }
-        // Big bonus if standing on food
         if (newFood > 0.3) {
             foodReward += 0.15;
         }
-        // FIXED: Better heat gradient reward
+        // Heat gradient reward
         const oldHeat = this.map.grid[oldY][oldX][0];
         const oldNormalizedHeat = Math.min(1, oldHeat / maxHeat);
         const oldStress = Math.max(0, oldNormalizedHeat - this.heatTolerance);
         const newStress = stress;
         let heatReward = 0;
         if (oldStress > 0 && newStress < oldStress) {
-            // Moving away from danger - positive reward
             heatReward = (oldStress - newStress) * 0.3;
         }
         else if (newStress > oldStress) {
-            // Moving into danger - negative reward
-            heatReward = (oldStress - newStress) * 0.4; // Will be negative
+            heatReward = (oldStress - newStress) * 0.4;
         }
-        // Pheromone reward (your existing logic is good)
+        // Pheromone reward
         const pheromoneHere = this.map.grid[y][x][2] || 0;
         const pheromoneBefore = this.map.grid[oldY][oldX][2] || 0;
-        let pheromoneDelta = pheromoneHere - pheromoneBefore;
+        const pheromoneDelta = pheromoneHere - pheromoneBefore;
         const pheromoneReward = Math.tanh(pheromoneDelta * 2.5) * 0.05;
-        // COMBINED REWARD: Food + Heat + Pheromone
+        // Combined reward
         const totalReward = foodReward + heatReward + pheromoneReward;
         // Apply energy costs
         this.energy -= heatDamage + edgePenalty;
@@ -407,29 +367,19 @@ export class Cell {
         this.map.redrawCellBackground(oldX, oldY, this.size);
         this.map.drawCell(this.id, x, y);
         this.position = [x, y];
-        // Eating interruption
-        let eatInterruptPenalty = 0;
-        if (this.isEating && (oldX !== x || oldY !== y)) {
-            this.isEating = false;
-            this.eatingProgress = 0;
-            eatInterruptPenalty = 0.05; // Increased penalty
-            this.energy -= eatInterruptPenalty;
-        }
         if (movedOutOfBounds) {
             const penalty = 0.05;
             this.energy -= penalty;
             return {
                 success: false,
-                penalty: penalty + eatInterruptPenalty + edgePenalty,
+                penalty: penalty + edgePenalty,
                 reward: totalReward,
                 reason: 'out_of_bounds'
             };
         }
-        // Determine reason for logging
+        // Determine reason
         let reason = 'moved';
-        if (eatInterruptPenalty > 0)
-            reason = 'interrupted_eating';
-        else if (edgePenalty > 0)
+        if (edgePenalty > 0)
             reason = 'too_close_to_border';
         else if (foodReward > 0.1)
             reason = 'moving_toward_food';
@@ -443,47 +393,10 @@ export class Cell {
             reason = 'followed_bad_pheromone';
         return {
             success: true,
-            penalty: eatInterruptPenalty + edgePenalty,
+            penalty: edgePenalty,
             reward: totalReward,
             reason: reason
         };
-    }
-    eat() {
-        const [x, y] = this.position;
-        const currentFood = this.map.grid[y][x][1]; // Food is at index 1
-        // Check if there's food at current position
-        if (currentFood <= 0) {
-            const penalty = 0.05;
-            this.energy -= penalty;
-            this.isEating = false;
-            this.eatingProgress = 0;
-            return { success: false, penalty, reason: 'no_food' };
-        }
-        if (!this.isEating) {
-            // Start eating
-            this.isEating = true;
-            this.eatingProgress = 0;
-            this.eatingStartTime = this.age;
-            return { success: true, penalty: 0, reason: 'started_eating' };
-        }
-        // Continue eating
-        this.eatingProgress += 1; // Increment by frame
-        // Calculate ticks needed based on timeToEat and size
-        // Larger cells eat faster, smaller cells eat slower
-        const sizeModifier = this.size / 5; // size ranges 1-10, so this gives 0.2 to 2.0
-        const effectiveTimeToEat = this.timeToEat / sizeModifier;
-        const ticksNeeded = effectiveTimeToEat * 60; // Assuming 60 ticks per second
-        if (this.eatingProgress >= ticksNeeded) {
-            // Finished eating
-            const foodConsumed = Math.min(0.5, currentFood);
-            this.map.grid[y][x][1] -= foodConsumed;
-            this.energy = Math.min(1, this.energy + foodConsumed);
-            // Reset eating state
-            this.isEating = false;
-            this.eatingProgress = 0;
-            return { success: true, penalty: 0, reason: 'completed_eating', energyGained: foodConsumed };
-        }
-        return { success: true, penalty: 0, reason: 'eating_in_progress' };
     }
     contract() {
         let penalty = 0;
@@ -574,48 +487,51 @@ export class Cell {
             pheromoneUse: 0,
             exploration: 0
         };
-        // Base rewards from chosen actions
         const actionNames = Object.keys(rewardsMap);
         for (let idx = 0; idx < chosenActions.length; idx++) {
             const i = chosenActions[idx];
             const actionName = actionNames[i];
             const actionReward = rewardsMap[actionName];
             const result = actionResults[idx];
-            // Apply base rewards only if action succeeded
             if (result.success) {
                 for (const key in actionReward) {
                     reward[key] += actionReward[key];
                 }
+                // Bonus for successful eating
+                if (actionName === 'eat' && result.energyGained) {
+                    reward.energy += result.energyGained * 3; // Amplify eating reward
+                    reward.survival += 0.3;
+                }
+                if (actionName === 'divide') {
+                    reward.reproduction = 0.2;
+                }
             }
-            // Apply penalties for failed actions
             if (!result.success) {
-                reward.energy -= result.penalty * 2; // Double penalty in reward calculation
-                reward.survival -= result.penalty;
-            }
-            // Bonus for successful eating completion
-            if (actionName === 'eat' && result.reason === 'completed_eating') {
-                reward.energy += 0.3;
-                reward.survival += 0.1;
-            }
-            // Small bonus for maintaining eating focus
-            if (actionName === 'eat' && result.reason === 'eating_in_progress') {
-                reward.survival += 0.02;
+                reward.energy -= result.penalty * 3;
+                reward.survival -= result.penalty * 2;
             }
         }
-        // --- Energy-based dynamic reward ---
         const energyChange = this.energy - this.previousEnergy;
         if (energyChange > 0)
-            reward.energy += energyChange * 10;
+            reward.energy += energyChange * 20; // Increased from 10
         else if (energyChange < 0)
-            reward.energy += energyChange * 5;
-        // --- Survival ---
+            reward.energy += energyChange * 10; // Increased from 5
+        // STRONGER survival signals
         if (this.energy <= 0.1)
-            reward.survival -= 2;
+            reward.survival -= 5; // Increased from 2
         else if (this.energy >= 0.8)
-            reward.survival += 0.5;
-        // --- Exploration ---
+            reward.survival += 1; // Increased from 0.5
+        // Heat avoidance reward
         const currentHeat = this.map.grid[this.position[1]][this.position[0]][0];
         const normalizedHeat = Math.min(1, currentHeat / Math.max(...this.map.heatPoints.map(([_, __, A]) => A)));
+        if (normalizedHeat > this.heatTolerance) {
+            // Punish being in dangerous heat
+            reward.survival -= (normalizedHeat - this.heatTolerance) * 5;
+        }
+        else {
+            // Reward being in safe zones
+            reward.survival += 0.1;
+        }
         const heatDelta = Math.abs(normalizedHeat - this.heatTolerance);
         reward.exploration += heatDelta * 0.1;
         return reward;
@@ -628,8 +544,10 @@ export class Cell {
         return grad;
     }
     decideAndAct() {
-        if (this.energy <= 0)
+        if (this.energy <= 0) {
             this.removeCell();
+            return;
+        }
         this.age++;
         const functionList = [
             () => this.move(0),
@@ -646,20 +564,18 @@ export class Cell {
         ];
         this.previousEnergy = this.energy;
         let actionProbabilities = this.brain.think();
-        // DEFENSIVE CHECK: Validate probabilities
         if (!actionProbabilities || actionProbabilities.length !== 11) {
-            console.error(`Cell ${this.id}: Invalid action probabilities`, actionProbabilities);
-            actionProbabilities = new Array(11).fill(1 / 11); // Default uniform distribution
+            console.error(`Cell ${this.id}: Invalid action probabilities`);
+            actionProbabilities = new Array(11).fill(1 / 11);
         }
-        // DEFENSIVE CHECK: Clean NaN and Infinity
         actionProbabilities = actionProbabilities.map((p, idx) => {
             if (!isFinite(p) || isNaN(p)) {
-                console.warn(`Cell ${this.id}: Invalid probability at index ${idx}: ${p}`);
-                return 0.1; // Default small probability
+                return 0.09; // Slightly lower default
             }
-            return Math.max(0, Math.min(1, p)); // Clamp to [0, 1]
+            return Math.max(0, Math.min(1, p));
         });
-        const threshold = 0.6;
+        // ADJUSTED threshold - not too high
+        const threshold = 0.5; // Reduced from 0.6
         const candidates = actionProbabilities
             .map((val, idx) => ({ idx, val }))
             .filter(a => a.val >= threshold);
@@ -668,80 +584,51 @@ export class Cell {
             if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
                 chosenActions.push(a.idx);
         }
-        // If no actions passed threshold, pick the best one
         if (chosenActions.length === 0) {
             const bestIdx = actionProbabilities.indexOf(Math.max(...actionProbabilities));
             chosenActions.push(bestIdx);
         }
-        // DEFENSIVE CHECK: Validate indices before execution
         const actionResults = [];
         for (const i of chosenActions) {
-            if (i < 0 || i >= functionList.length || typeof functionList[i] !== 'function') {
+            if (i < 0 || i >= functionList.length) {
                 console.error(`Cell ${this.id}: Invalid action index ${i}`);
                 continue;
             }
             const result = functionList[i]();
             actionResults.push(result);
         }
-        // const threshold = 0.6;
-        // const candidates = actionProbabilities
-        //     .map((val, idx) => ({ idx, val }))
-        //     .filter(a => a.val >= threshold);
-        // const chosenActions: number[] = [];
-        // for (const a of candidates.sort((a, b) => b.val - a.val)) {
-        //     if (chosenActions.every(chosen => !conflictMatrix[a.idx][chosen]))
-        //         chosenActions.push(a.idx);
-        // }
-        // // If no actions passed threshold, pick the best one
-        // if (chosenActions.length === 0) {
-        //     const bestIdx = actionProbabilities.indexOf(Math.max(...actionProbabilities));
-        //     chosenActions.push(bestIdx);
-        // }
-        // // Execute chosen actions and collect results
-        // const actionResults: any[] = [];
-        // for (const i of chosenActions) {
-        //     const result = functionList[i]();
-        //     actionResults.push(result);
-        // }
-        // Base metabolic decay
-        const baseMetabolicCost = 0.01;
-        const sizeCost = this.size * 0.001;
+        const baseMetabolicCost = 0.005; // Reduced from 0.01
+        const sizeCost = this.size * 0.0005; // Reduced from 0.001
         this.energy -= (baseMetabolicCost + sizeCost);
-        // Additional cost while eating (concentration)
-        if (this.isEating) {
-            this.energy -= 0.001;
-        }
-        // console.log("energy level: ", this.energy);
-        // Compute reward feedback with action results
         const reward = this.computeReward(chosenActions, actionResults);
-        const totalReward = (reward.energy * 0.6 +
-            reward.survival * 0.3 +
-            reward.reproduction * 0.05 +
-            reward.exploration * 0.1);
-        // Reward-modulated learning target
+        // ADJUSTED reward weights
+        const totalReward = (reward.energy * 0.5 + // Slightly reduced
+            reward.survival * 0.4 + // Increased
+            reward.reproduction * 0.02 + // Reduced significantly
+            reward.exploration * 0.08 // Slightly reduced
+        );
+        // IMPROVED learning targets
         const targetProbabilities = actionProbabilities.map((prob, idx) => {
             if (chosenActions.includes(idx)) {
-                // Actions that were chosen
                 const actionIdx = chosenActions.indexOf(idx);
                 const result = actionResults[actionIdx];
                 if (result.success) {
-                    // Successful action - reinforce
-                    return Math.min(1, prob + totalReward * 0.1);
+                    // AMPLIFIED reinforcement
+                    return Math.min(0.95, prob + totalReward * 0.2);
                 }
                 else {
-                    // Failed action - punish strongly
-                    return Math.max(0, prob - Math.abs(totalReward) * 0.2);
+                    // AMPLIFIED punishment
+                    return Math.max(0.05, prob - Math.abs(totalReward) * 0.3);
                 }
             }
             else {
-                // Actions that were not chosen
-                return Math.max(0, prob * 0.95); // Slight decay
+                // Slower decay for unchosen actions
+                return Math.max(0.05, prob * 0.98);
             }
         });
         const MSEgradient = this.MSEgradient(actionProbabilities, targetProbabilities);
         const loss = this.computeLossMSE(actionProbabilities, reward);
         this.brain.policyNetwork.backPropagate(loss, MSEgradient);
-        // Ensure the action probabilities match the function list length
     }
 }
 // when pheromone is caught and helps a cell, send rewards (negative or positive) to cell who put down pheromone by cell_id;

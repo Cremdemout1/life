@@ -6,7 +6,7 @@
 /*   By: yohan <yohan@student.42.fr>                +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/09/29 15:58:48 by ycantin           #+#    #+#             */
-/*   Updated: 2025/11/06 20:03:56 by yohan            ###   ########.fr       */
+/*   Updated: 2025/11/07 12:17:19 by yohan            ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -143,7 +143,7 @@ export class mapClass {
                 const [r, g, b] = this.background[yy][xx];
                 ctx.fillStyle = `rgb(${r},${g},${b})`;
                 ctx.fillRect(xx, yy, 1, 1);
-            }=
+            }
         }
     }
 
@@ -243,7 +243,58 @@ export class mapClass {
     }
 }
 
+class SimulationStats {
+    // Population metrics
+    totalCells: number = 0;
+    avgAge: number = 0;
+    maxAge: number = 0;
+    avgEnergy: number = 0;
+    
+    // Behavioral metrics
+    avgFoodSeekingScore: number = 0;  // How often cells move toward food
+    avgHeatAvoidanceScore: number = 0; // How often cells avoid heat
+    successfulDivisions: number = 0;
+    failedDivisions: number = 0;
+    
+    // Learning metrics
+    avgReward: number = 0;
+    avgLoss: number = 0;
+    
+    update(cells: Map<number, Cell>) {
+        this.totalCells = cells.size;
+        
+        let totalAge = 0;
+        let totalEnergy = 0;
+        let maxAge = 0;
+        
+        for (const cell of cells.values()) {
+            totalAge += cell.age;
+            totalEnergy += cell.energy;
+            maxAge = Math.max(maxAge, cell.age);
+        }
+        
+        this.avgAge = totalAge / this.totalCells;
+        this.avgEnergy = totalEnergy / this.totalCells;
+        this.maxAge = maxAge;
+    }
+    
+    display() {
+        const statsDiv = document.getElementById("stats");
+        if (!statsDiv) return;
+    
+        statsDiv.innerHTML = `
+            <div>Cells: ${this.totalCells}</div>
+            <div>Avg Age: ${this.avgAge.toFixed(1)}</div>
+            <div>Max Age: ${this.maxAge}</div>
+            <div>Avg Energy: ${this.avgEnergy.toFixed(2)}</div>
+            <div>Avg Reward: ${this.avgReward.toFixed(3)}</div>
+        `;
+    }
+    
+}
+
 const myMap = mapClass.create("map");
+const stats = new SimulationStats;
 
 if (myMap) {
 //   console.log("Map created", myMap);
@@ -251,11 +302,14 @@ if (myMap) {
   myMap.fillFeeders();
   myMap.colorMap();
   myMap.createCell(300, 300, 1, undefined, undefined);
-  myMap.createCell(300, 300, 2, undefined, undefined);
-  myMap.createCell(300, 300, 3, undefined, undefined);
+  myMap.createCell(100, 500, 2, undefined, undefined);
+  myMap.createCell(50, 50, 3, undefined, undefined);
+  myMap.createCell(100, 100, 4, undefined, undefined);
+  myMap.createCell(500, 500, 5, undefined, undefined);
   setInterval (() => {
-    myMap.updateControlPanel()
-    });
+    stats.update(myMap.cellId);
+    stats.display();
+    }, 100);
 } else {
   console.warn("Canvas not found");
 }

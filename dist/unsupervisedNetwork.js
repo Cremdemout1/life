@@ -1,241 +1,25 @@
 import { createWeightMatrix, createBias } from "./random_gen.js";
 import { NN } from "./policyNetwork.js";
-// export class UnsupervisedNN {
-//     learning_rate: number = 0.1;
-//     epochs: number = 50;
-//     input: number[]; //size = 79
-//     input_size: number = 79;
-//     hidden_layer_size: number = 32;
-//     latent_layer_size: number = 8;
-//     frameCounter: number = 0;
-//     trainingInterval: number = 50;
-//     experienceBuffer: number[][] = [];
-//     bufferSize: number = 50;
-//     W1: number[][]; //32 x 79 used for encoder
-//     W2: number[][]; //8 x 32 used for encoder
-//     W3: number[][]; //32 x 8 used for decoder
-//     W4: number[][]; //79 x 32 uded for decoder
-//     b1: number[]; //32 x 1
-//     b2: number[]; //8 x 1
-//     b3: number[]; //32 x 1
-//     b4: number[]; //79 x 1
-//     cell: Cell | null;
-//     policyNetwork: NN;
-//     constructor(cell: Cell | null) {
-//         //input: position of cell, radius around cell which willbe array of arrays in which each array has a position, a heat, food and pheromone. pheromone is 1 0 or -1, energy left, heatTolerance, timeToeat
-//         this.cell = cell;
-//         this.input = this.modelInput();
-//         this.W1 = createWeightMatrix(this.hidden_layer_size, this.input_size);
-//         this.W2 = createWeightMatrix(this.latent_layer_size, this.hidden_layer_size);
-//         this.W3 = createWeightMatrix(this.hidden_layer_size, this.latent_layer_size);
-//         this.W4 = createWeightMatrix(this.input_size, this.hidden_layer_size);
-//         this.b1 = createBias(this.hidden_layer_size);
-//         this.b2 = createBias(this.latent_layer_size);
-//         this.b3 = createBias(this.hidden_layer_size);
-//         this.b4 = createBias(this.input_size);
-//         this.policyNetwork = new NN(this.cell);
-//     }
-//     clone(newOwner: Cell | null, mutate: boolean = false): UnsupervisedNN {
-//         const clone = new UnsupervisedNN(newOwner);
-//         if (clone.cell === null)
-//             (console.log("Error: cell inactive for brain"), null);
-//         else
-//             clone.policyNetwork = this.policyNetwork.clone(clone.cell, mutate);
-//         if (mutate) {
-//             const mutationRate = 0.02; // tweak this
-//             const mutationStrength = 0.05; // size of weight noise
-//             const mutateValue = (v: number) =>
-//                 Math.random() < mutationRate
-//                     ? v + (Math.random() * 2 - 1) * mutationStrength
-//                     : v;
-//             clone.W1 = this.W1.map(row => row.map(mutateValue));
-//             clone.W2 = this.W2.map(row => row.map(mutateValue));
-//             clone.W3 = this.W3.map(row => row.map(mutateValue));
-//             clone.W4 = this.W4.map(row => row.map(mutateValue));
-//             clone.b1 = this.b1.map(mutateValue);
-//             clone.b2 = this.b2.map(mutateValue);
-//             clone.b3 = this.b3.map(mutateValue);
-//             clone.b4 = this.b4.map(mutateValue);
-//         }
-//         else {
-//             clone.W1 = this.W1.map(row => [...row]);
-//             clone.W2 = this.W2.map(row => [...row]);
-//             clone.W3 = this.W3.map(row => [...row]);
-//             clone.W4 = this.W4.map(row => [...row]);
-//             clone.b1 = [...this.b1];
-//             clone.b2 = [...this.b2];
-//             clone.b3 = [...this.b3];
-//             clone.b4 = [...this.b4];
-//         }
-//         clone.input = this.modelInput();
-//         return clone;
-//     }
-//     private modelInput(): number[] {
-//         const input: Array<any> = [];
-//         let heat: Array<number> = [], feed: Array<number> = [], pheromone: Array<number> = [];
-//         if (!this.cell)
-//             (console.log("Error: cell inactive for brain"), null);
-//         else {
-//             for (let i = 0; i < this.cell.neighbourhood.length; i++) {
-//                 heat[i] = this.cell.neighbourhood[i]?.[0] ?? 0;
-//                 feed[i] = this.cell.neighbourhood[i]?.[1] ?? 0;
-//                 pheromone[i] = this.cell.neighbourhood[i]?.[2] ?? 0;
-//             }
-//             input.push(...heat, ...feed, ...pheromone, 
-//                 this.cell.age, this.cell.energy, 
-//                 this.cell.heatTolerance, this.cell.timeToEat);
-//             // console.log(input);
-//         }
-//         return input;
-//     }
-//     private ReLU(value: number) { //activation function
-//         return (Math.max(0, value));
-//     }
-//     private forwardPass(input: number[], weights: number[][], bias: number[]): number[] {
-//         const newLayer: number[] = [];
-//         for (let row = 0; row < weights.length; row++) {
-//             let sum = 0;
-//             for (let col = 0; col < weights[0].length; col++) {
-//                 sum += weights[row][col] * input[col];;
-//             }
-//             newLayer.push(sum + bias[row]);
-//         }
-//         const activatedLayer = newLayer.map(v => this.ReLU(v));
-//         return activatedLayer;
-//     }
-//     private MSE(input: number[], output: number[]): number { //mean squared error
-//         let loss = 0;
-//         for (let i = 0; i < this.input.length; i++) {
-//             let diff = input[i] - output[i];
-//             loss += diff * diff;
-//         }
-//         return loss / input.length;
-//     }
-//     private MSEgradient(input: number[], output: number[]): number[] {
-//         const grad: number[] = [];
-//         const len = input.length;
-//         for (let i = 0; i < len; i++)
-//             grad[i] = 2 * (output[i] - input[i]) / len;
-//         return grad;
-//     }
-//     private backwardPass(previousLayer: number[], //back propagation
-//                  currentActivatedLayer: number[], 
-//                  gradOutputs: number[], 
-//                  weights: number[][], 
-//                  bias: number[]): number[] {
-//         const gradientInput: number[] = new Array(previousLayer.length).fill(0); //init gradientInput
-//         for (let i = 0; i < weights.length; i++) {
-//             const ReLUDerivative = currentActivatedLayer[i] > 0 ? 1 : 0;
-//             for (let j = 0; j < previousLayer.length; j++) {
-//                 const grad = gradOutputs[i] * ReLUDerivative * previousLayer[j];
-//                 gradientInput[j] += gradOutputs[i] * ReLUDerivative * weights[i][j];
-//                 weights[i][j] -= this.learning_rate * grad;
-//             }
-//             bias[i] -= this.learning_rate * gradOutputs[i] * ReLUDerivative;
-//         }
-//         return gradientInput;
-//     }
-//     private trainAutoEncoder(trainingInput: number[]): number {
-//         //encode
-//         const hiddenLayer = this.forwardPass(trainingInput, this.W1, this.b1);
-//         const latentLayer = this.forwardPass(hiddenLayer, this.W2, this.b2);
-//         //decode
-//         const hiddenLayerPrime = this.forwardPass(latentLayer, this.W3, this.b3);
-//         const inputPrime = this.forwardPass(hiddenLayerPrime, this.W4, this.b4);
-//         //loss function
-//         const loss: number = this.MSE(trainingInput, inputPrime);
-//         //back propagation
-//         const GradientHiddenLayerPrime = this.backwardPass(hiddenLayerPrime, inputPrime, this.MSEgradient(trainingInput, inputPrime), this.W4, this.b4);
-//         const GradientLatentLayer = this.backwardPass(latentLayer, hiddenLayerPrime, GradientHiddenLayerPrime, this.W3, this.b3);
-//         const GradientHiddenLayer = this.backwardPass(hiddenLayer, latentLayer, GradientLatentLayer, this.W2, this.b2);
-//         this.backwardPass(trainingInput, hiddenLayer, GradientHiddenLayer, this.W1, this.b1);
-//         return loss;
-//     }
-//     private batchTrain() {
-//         if (this.experienceBuffer.length === 0) return;
-//         let totalLoss = 0;
-//         const numSamples = Math.min(5, this.experienceBuffer.length); // Train on 5 random samples
-//         // Sample random experiences from buffer
-//         for (let i = 0; i < numSamples; i++) {
-//             const randomIdx = Math.floor(Math.random() * this.experienceBuffer.length);
-//             const experience = this.experienceBuffer[randomIdx];
-//             totalLoss += this.trainAutoEncoder(experience);
-//         }
-//         const avgLoss = totalLoss / numSamples;
-//         // Optional: log training progress occasionally
-//         if (this.frameCounter % 100 === 0 && this.cell) {
-//             console.log(`Cell ${this.cell.id}: Autoencoder loss = ${avgLoss.toFixed(4)}`);
-//         }
-//     }
-//     private AutoEncoder(): number[] {
-//         //encode
-//         const hiddenLayer = this.forwardPass(this.input, this.W1, this.b1);
-//         const latentLayer = this.forwardPass(hiddenLayer, this.W2, this.b2);
-//         //decode
-//         const hiddenLayerPrime = this.forwardPass(latentLayer, this.W3, this.b3);
-//         const inputPrime = this.forwardPass(hiddenLayerPrime, this.W4, this.b4);
-//         //loss function
-//         const loss: number = this.MSE(this.input, inputPrime);
-//         //back propagation
-//         const GradientHiddenLayerPrime = this.backwardPass(hiddenLayerPrime, inputPrime, this.MSEgradient(this.input, inputPrime), this.W4, this.b4);
-//         const GradientLatentLayer = this.backwardPass(latentLayer, hiddenLayerPrime, GradientHiddenLayerPrime, this.W3, this.b3);
-//         const GradientHiddenLayer = this.backwardPass(hiddenLayer, latentLayer, GradientLatentLayer, this.W2, this.b2);
-//         this.backwardPass(this.input, hiddenLayer, GradientHiddenLayer, this.W1, this.b1);
-//         return latentLayer;
-//     }
-//     // public think() { //predict
-//     //     const instincts = this.AutoEncoder();
-//     //     return this.policyNetwork.predict(instincts);
-//     // }
-//     private storeExperience(input: number[]) {
-//         this.experienceBuffer.push([...input]);
-//         // Keep buffer at fixed size
-//         if (this.experienceBuffer.length > this.bufferSize) {
-//             this.experienceBuffer.shift(); // Remove oldest
-//         }
-//     }
-//     private encode(input: number[]): number[] {
-//         const hiddenLayer = this.forwardPass(input, this.W1, this.b1);
-//         const latentLayer = this.forwardPass(hiddenLayer, this.W2, this.b2);
-//         return latentLayer;
-//     }
-//     public think() { //predict
-//         // Update input
-//         this.input = this.modelInput();
-//         // Store experience for later training
-//         this.storeExperience(this.input);
-//         // Increment frame counter
-//         this.frameCounter++;
-//         // Train periodically
-//         if (this.frameCounter % this.trainingInterval === 0) {
-//             this.batchTrain();
-//             this.frameCounter = 0;
-//         }
-//         // Always do forward pass (no training here!)
-//         const instincts = this.encode(this.input);
-//         return this.policyNetwork.predict(instincts);
-//     }
-// }
 export class UnsupervisedNN {
     constructor(cell) {
-        this.learning_rate = 0.01;
+        this.learning_rate = 0.005;
         this.epochs = 50;
-        this.input_size = 52;
+        this.input_size = 51;
         this.first_hidden_layer_size = 64;
         this.hidden_layer_size = 32;
         this.latent_layer_size = 8;
         this.frameCounter = 0;
-        this.trainingInterval = 10;
+        this.trainingInterval = 20;
         this.experienceBuffer = [];
         this.bufferSize = 100;
         this.cell = cell;
         this.input = this.modelInput();
-        this.W1 = createWeightMatrix(this.first_hidden_layer_size, this.input_size);
-        this.W2 = createWeightMatrix(this.hidden_layer_size, this.first_hidden_layer_size);
-        this.W3 = createWeightMatrix(this.latent_layer_size, this.hidden_layer_size);
-        this.W4 = createWeightMatrix(this.hidden_layer_size, this.latent_layer_size);
-        this.W5 = createWeightMatrix(this.first_hidden_layer_size, this.hidden_layer_size);
-        this.W6 = createWeightMatrix(this.input_size, this.first_hidden_layer_size);
+        this.W1 = createWeightMatrix(this.first_hidden_layer_size, this.input_size, this.input_size, this.first_hidden_layer_size);
+        this.W2 = createWeightMatrix(this.hidden_layer_size, this.first_hidden_layer_size, this.first_hidden_layer_size, this.hidden_layer_size);
+        this.W3 = createWeightMatrix(this.latent_layer_size, this.hidden_layer_size, this.hidden_layer_size, this.latent_layer_size);
+        this.W4 = createWeightMatrix(this.hidden_layer_size, this.latent_layer_size, this.latent_layer_size, this.hidden_layer_size);
+        this.W5 = createWeightMatrix(this.first_hidden_layer_size, this.hidden_layer_size, this.hidden_layer_size, this.first_hidden_layer_size);
+        this.W6 = createWeightMatrix(this.input_size, this.first_hidden_layer_size, this.first_hidden_layer_size, this.input_size);
         this.b1 = createBias(this.first_hidden_layer_size);
         this.b2 = createBias(this.hidden_layer_size);
         this.b3 = createBias(this.latent_layer_size);
@@ -358,7 +142,7 @@ export class UnsupervisedNN {
         if (!this.cell)
             return new Array(32).fill(0);
         const [cx, cy] = this.cell.position;
-        const r = 100;
+        const r = 20;
         const directions = ['E', 'SE', 'S', 'SW', 'W', 'NW', 'N', 'NE'];
         const directionBins = {};
         for (const dir of directions) {
@@ -424,55 +208,11 @@ export class UnsupervisedNN {
         }
         return features;
     }
-    // private getRadialFeatures(): number[] {
-    //     if (!this.cell)
-    //         return new Array(9).fill(0);
-    //     const [cx, cy] = this.cell.position;
-    //     const r = 10;
-    //     const rings = [
-    //         {name: 'near', min: 0, max: 3, tiles: [] as Array<[number, number, number]>},
-    //         {name: 'medium', min: 4, max: 7, tiles: [] as Array<[number, number, number]>},
-    //         {name: 'far', min: 8, max: 10, tiles: [] as Array<[number, number, number]>}
-    //     ];
-    //     const gridSize = r * 2 + 1;
-    //     for (let i = 0; i < this.cell.neighbourhood.length; i++) {
-    //         const tile = this.cell.neighbourhood[i];
-    //         const localX = i % gridSize;
-    //         const localY = Math.floor(i / gridSize);
-    //         const tileX = localX + cx - r;
-    //         const tileY = localY + cy - r;
-    //         const dx = tileX - cx;
-    //         const dy = tileY - cy;
-    //         const distance = Math.sqrt(dx * dx + dy * dy);
-    //         for (const ring of rings) {
-    //             if (distance >= ring.min && distance <= ring.max) {
-    //                 ring.tiles.push(tile);
-    //                 break ;
-    //             }
-    //         }
-    //     }
-    //     const features: number[] = [];
-    //     for (const ring of rings) {
-    //         if (ring.tiles.length === 0)
-    //             continue ;
-    //         const heats = ring.tiles.map(t => t[0]);
-    //         const foods = ring.tiles.map(t => t[1]);
-    //         const pheromones = ring.tiles.map(t => t[2]);
-    //         const maxFood = Math.max(...foods);
-    //         const avgHeat = heats.reduce((a, b) => a + b, 0) / heats.length;
-    //         const maxHeat = Math.max(...this.cell.map.heatPoints.map(([_, __, A]) => A));
-    //         const normalizedHeat = avgHeat / maxHeat;
-    //         const pheromoneCount = pheromones.filter(p => p !== 0).length;
-    //         const pheromoneDensity = Math.tanh(pheromoneCount / ring.tiles.length);
-    //         features.push(maxFood, normalizedHeat, pheromoneDensity);
-    //     }
-    //     return features;
-    // }
     getRadialFeatures() {
         if (!this.cell)
             return new Array(9).fill(0);
         const [cx, cy] = this.cell.position;
-        const r = 100;
+        const r = 20;
         const rings = [
             { name: 'near', min: 0, max: 3, tiles: [] },
             { name: 'medium', min: 4, max: 7, tiles: [] },
@@ -609,13 +349,12 @@ export class UnsupervisedNN {
             isFinite(this.cell.age) ? this.cell.age / 1000 : 0,
             isFinite(this.cell.size) ? this.cell.size / 10 : 0.1,
             isFinite(this.cell.speed) ? this.cell.speed / 10 : 0.1,
-            this.cell.isEating ? 1 : 0
         ];
     }
     modelInput() {
         if (!this.cell) {
             console.log("Error: cell inactive for brain");
-            return new Array(52).fill(0);
+            return new Array(51).fill(0);
         }
         const features = [];
         features.push(...this.getDirectionalFeatures());
@@ -668,6 +407,8 @@ export class UnsupervisedNN {
         console.log(`  Is eating: ${input[51]}`);
     }
     ReLU(value) {
+        if (!isFinite(value))
+            return 0;
         return (Math.max(0, value));
     }
     forwardPass(input, weights, bias) {
@@ -675,10 +416,18 @@ export class UnsupervisedNN {
         for (let row = 0; row < weights.length; row++) {
             let sum = 0;
             for (let col = 0; col < weights[0].length; col++) {
-                sum += weights[row][col] * input[col];
-                ;
+                // sum += weights[row][col] * input[col];
+                const inputVal = input[col];
+                const weight = weights[row][col];
+                if (!isFinite(inputVal) || !isFinite(weight)) {
+                    continue; // Skip invalid values
+                }
+                sum += weight * inputVal;
             }
-            newLayer.push(sum + bias[row]);
+            // newLayer.push(sum + bias[row]);
+            sum = Math.max(-50, Math.min(50, sum));
+            const biasVal = isFinite(bias[row]) ? bias[row] : 0;
+            newLayer.push(sum + biasVal);
         }
         const activatedLayer = newLayer.map(v => this.ReLU(v));
         return activatedLayer;
@@ -703,12 +452,28 @@ export class UnsupervisedNN {
         const gradientInput = new Array(previousLayer.length).fill(0); //init gradientInput
         for (let i = 0; i < weights.length; i++) {
             const ReLUDerivative = currentActivatedLayer[i] > 0 ? 1 : 0;
-            for (let j = 0; j < previousLayer.length; j++) {
-                const grad = gradOutputs[i] * ReLUDerivative * previousLayer[j];
-                gradientInput[j] += gradOutputs[i] * ReLUDerivative * weights[i][j];
-                weights[i][j] -= this.learning_rate * grad;
+            let gradOut = gradOutputs[i];
+            if (!isFinite(gradOut)) {
+                gradOut = 0;
             }
-            bias[i] -= this.learning_rate * gradOutputs[i] * ReLUDerivative;
+            // INCREASED clipping threshold
+            gradOut = Math.max(-5, Math.min(5, gradOut));
+            for (let j = 0; j < previousLayer.length; j++) {
+                const prevVal = previousLayer[j];
+                if (!isFinite(prevVal))
+                    continue;
+                const grad = gradOut * ReLUDerivative * prevVal;
+                // INCREASED clipping threshold
+                const clippedGrad = Math.max(-1.0, Math.min(1.0, grad));
+                gradientInput[j] += gradOut * ReLUDerivative * weights[i][j];
+                weights[i][j] -= this.learning_rate * clippedGrad;
+                // Less aggressive weight clipping
+                weights[i][j] = Math.max(-10, Math.min(10, weights[i][j]));
+            }
+            const biasGrad = gradOut * ReLUDerivative;
+            const clippedBiasGrad = Math.max(-1.0, Math.min(1.0, biasGrad));
+            bias[i] -= this.learning_rate * clippedBiasGrad;
+            bias[i] = Math.max(-10, Math.min(10, bias[i]));
         }
         return gradientInput;
     }
@@ -800,6 +565,14 @@ export class UnsupervisedNN {
         const latent_layer = this.forwardPass(hidden_layer, this.W3, this.b3);
         return latent_layer;
     }
+    inspectWeights() {
+        var _a;
+        const maxWeight = Math.max(...this.W1.flat().map(Math.abs), ...this.W2.flat().map(Math.abs), ...this.W3.flat().map(Math.abs));
+        if (maxWeight > 10) {
+            console.warn(`Cell ${(_a = this.cell) === null || _a === void 0 ? void 0 : _a.id}: Weights exploding! Max: ${maxWeight}`);
+            // Optional: reset or scale down weights
+        }
+    }
     think() {
         // Update input
         this.input = this.modelInput();
@@ -810,6 +583,7 @@ export class UnsupervisedNN {
         // Train periodically
         if (this.frameCounter % this.trainingInterval === 0) {
             this.batchTrain();
+            this.inspectWeights();
             this.frameCounter = 0;
         }
         // Always do forward pass (no training here!)
